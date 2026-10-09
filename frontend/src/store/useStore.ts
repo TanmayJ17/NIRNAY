@@ -1,18 +1,34 @@
 import { create } from 'zustand';
 import type { Interventions, SimulationResult, RecommendResult, Hotspot, ChatMessage } from '@/types';
 import { simulate } from '@/engine/simulator';
-import { askNirnay } from '@/api/chat';
-import { DEFAULT_RAIN_MM, DEFAULT_DURATION_H, DEFAULT_AVAILABLE_PUMPS, DEFAULT_AVAILABLE_CREWS, ALERT_THRESHOLD_M, CLOSURE_THRESHOLD_M } from '@/config';
+import { explain } from '@/engine/explain';
+import {
+  DEFAULT_RAIN_MM,
+  DEFAULT_DURATION_H,
+  DEFAULT_AVAILABLE_PUMPS,
+  DEFAULT_AVAILABLE_CREWS,
+  ALERT_THRESHOLD_M,
+  CLOSURE_THRESHOLD_M,
+} from '@/config';
 import type { PinStatus } from '@/types';
 import { hotspots } from '@/data/loadHotspots';
 
 /** Default interventions (nothing deployed) */
-const defaultInterventions = (): Interventions => ({
+export const defaultInterventions = (): Interventions => ({
   tempPumps: 0,
   drainCleared: false,
   preDivert: false,
   roadClosed: false,
 });
+
+export interface ScenarioSnapshot {
+  label: string;
+  rainMm: number;
+  durationH: number;
+  interventions: Record<string, Interventions>;
+  simResults: Record<string, SimulationResult>;
+  totalClosureHours: number;
+}
 
 export interface StoreState {
   /* Scenario inputs */
@@ -30,8 +46,10 @@ export interface StoreState {
   /* Recommend result */
   recommendResult: RecommendResult | null;
 
-  /* Compare mode */
+  /* Compare A/B mode */
   compareMode: boolean;
+  scenarioA: ScenarioSnapshot;
+  scenarioB: ScenarioSnapshot;
 
   /* Active right panel tab */
   activeTab: 'interventions' | 'recommend' | 'explain';
@@ -57,7 +75,12 @@ export interface StoreState {
   setAvailablePumps: (n: number) => void;
   setAvailableCrews: (n: number) => void;
   setRecommendResult: (r: RecommendResult | null) => void;
+  applyRecommendedPlan: () => void;
   toggleCompareMode: () => void;
+  saveAsScenarioA: () => void;
+  saveAsScenarioB: () => void;
+  loadScenarioA: () => void;
+  loadScenarioB: () => void;
   runAllSimulations: () => void;
   applyPreset: (rainMm: number, durationH: number) => void;
 }
@@ -82,6 +105,31 @@ function runSims(
   return results;
 }
 
+function computeTotalClosureHours(results: Record<string, SimulationResult>): number {
+  let totalMins = 0;
+  for (const r of Object.values(results)) {
+    totalMins += r.closureMinutes;
+  }
+  return totalMins / 60;
+}
+
+function createScenarioSnapshot(
+  label: string,
+  rainMm: number,
+  durationH: number,
+  interventions: Record<string, Interventions>
+): ScenarioSnapshot {
+  const results = runSims(rainMm, durationH, interventions);
+  return {
+    label,
+    rainMm,
+    durationH,
+    interventions: JSON.parse(JSON.stringify(interventions)),
+    simResults: results,
+    totalClosureHours: computeTotalClosureHours(results),
+  };
+}
+
 export const useStore = create<StoreState>((set, get) => {
   // Compute initial simulations
   const initInterventions: Record<string, Interventions> = {};
@@ -89,6 +137,20 @@ export const useStore = create<StoreState>((set, get) => {
     initInterventions[h.id] = defaultInterventions();
   }
   const initResults = runSims(DEFAULT_RAIN_MM, DEFAULT_DURATION_H, initInterventions);
+
+  const initScenarioA = createScenarioSnapshot(
+    'Scenario A (Current Baseline)',
+    DEFAULT_RAIN_MM,
+    DEFAULT_DURATION_H,
+    initInterventions
+  );
+
+  const initScenarioB = createScenarioSnapshot(
+    'Scenario B (July 2026 Replay)',
+    180,
+    6,
+    initInterventions
+  );
 
   return {
     rainMm: DEFAULT_RAIN_MM,
@@ -99,6 +161,8 @@ export const useStore = create<StoreState>((set, get) => {
     availableCrews: DEFAULT_AVAILABLE_CREWS,
     recommendResult: null,
     compareMode: false,
+    scenarioA: initScenarioA,
+    scenarioB: initScenarioB,
     activeTab: 'recommend',
     chatMessages: [
       {
@@ -129,32 +193,39 @@ export const useStore = create<StoreState>((set, get) => {
         isChatLoading: true,
       }));
 
-      const { chatSessionId, rainMm, durationH, recommendResult } = get();
+      const { rainMm, durationH, selectedHotspotId, interventions, simResults, recommendResult, availablePumps, availableCrews } = get();
+      const currentHotspot = hotspots.find((h) => h.name === hotspotName || h.id === selectedHotspotId) || hotspots[0];
+      const currentSim = currentHotspot ? simResults[currentHotspot.id] : undefined;
+      const currentInt = currentHotspot ? interventions[currentHotspot.id] : undefined;
 
-      const response = await askNirnay({
-        sessionId: chatSessionId,
-        message: text,
-        currentScenario: {
-          rain_mm: rainMm,
-          duration_h: durationH,
-          allocation: recommendResult?.allocations || [],
-        },
-        hotspotName,
+      // Pure deterministic explanation from simulator and optimizer outputs
+      const explained = explain(text, {
+        rainMm,
+        durationH,
+        hotspot: currentHotspot,
+        simResult: currentSim,
+        interventions: currentInt,
+        recommendResult,
+        totalPumps: availablePumps,
+        totalCrews: availableCrews,
       });
 
       const assistantMsg: ChatMessage = {
         id: `asst-${Date.now()}`,
         sender: 'assistant',
-        text: response.reply,
-        toolsInvoked: response.tools_invoked,
-        isCached: response.isCached,
+        text: explained.reply,
+        toolsInvoked: explained.toolsInvoked,
+        isCached: false,
         timestamp: Date.now(),
       };
 
-      set((state) => ({
-        chatMessages: [...state.chatMessages, assistantMsg],
-        isChatLoading: false,
-      }));
+      // Slight natural tick to render cleanly
+      setTimeout(() => {
+        set((state) => ({
+          chatMessages: [...state.chatMessages, assistantMsg],
+          isChatLoading: false,
+        }));
+      }, 150);
     },
 
     setRainMm: (mm) => {
@@ -222,7 +293,61 @@ export const useStore = create<StoreState>((set, get) => {
     setAvailablePumps: (n) => set({ availablePumps: n }),
     setAvailableCrews: (n) => set({ availableCrews: n }),
     setRecommendResult: (r) => set({ recommendResult: r }),
+
+    applyRecommendedPlan: () => {
+      const { recommendResult, interventions } = get();
+      if (!recommendResult || !recommendResult.allocations) return;
+
+      const newInterventions: Record<string, Interventions> = { ...interventions };
+      for (const alloc of recommendResult.allocations) {
+        const existing = newInterventions[alloc.hotspotId] || defaultInterventions();
+        newInterventions[alloc.hotspotId] = {
+          ...existing,
+          tempPumps: alloc.pumps,
+          drainCleared: alloc.drainCleared,
+        };
+      }
+
+      set({ interventions: newInterventions });
+      get().runAllSimulations();
+    },
+
     toggleCompareMode: () => set({ compareMode: !get().compareMode }),
+
+    saveAsScenarioA: () => {
+      const { rainMm, durationH, interventions } = get();
+      set({
+        scenarioA: createScenarioSnapshot('Scenario A', rainMm, durationH, interventions),
+      });
+    },
+
+    saveAsScenarioB: () => {
+      const { rainMm, durationH, interventions } = get();
+      set({
+        scenarioB: createScenarioSnapshot('Scenario B', rainMm, durationH, interventions),
+      });
+    },
+
+    loadScenarioA: () => {
+      const { scenarioA } = get();
+      set({
+        rainMm: scenarioA.rainMm,
+        durationH: scenarioA.durationH,
+        interventions: JSON.parse(JSON.stringify(scenarioA.interventions)),
+      });
+      get().runAllSimulations();
+    },
+
+    loadScenarioB: () => {
+      const { scenarioB } = get();
+      set({
+        rainMm: scenarioB.rainMm,
+        durationH: scenarioB.durationH,
+        interventions: JSON.parse(JSON.stringify(scenarioB.interventions)),
+      });
+      get().runAllSimulations();
+    },
+
     runAllSimulations: () => {
       const { rainMm, durationH, interventions } = get();
       set({ simResults: runSims(rainMm, durationH, interventions) });

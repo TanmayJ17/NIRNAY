@@ -51,14 +51,18 @@ export interface AllocationEntry {
   drainCleared: boolean;
 }
 
-/** Result from POST /api/recommend */
+/** Result from recommend optimization */
 export interface RecommendResult {
   closureHoursSaved: number;
   closureHoursSavedRange?: [number, number]; // P10-P90
-  vehiclesAvoided: number;
-  vehiclesAvoidedRange?: [number, number]; // P10-P90
   impactIndexReduced: number;
   impactIndexReducedRange?: [number, number]; // P10-P90
+  stabilityPercent?: number;
+  greedyClosureHours?: number;
+  optimal?: any;
+  greedy?: any;
+  equalSplit?: any;
+  historySplit?: any;
   allocations: AllocationEntry[];
   rationale?: string;
 }

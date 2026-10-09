@@ -5,42 +5,44 @@ import DispatchControls from './DispatchControls';
 import RecommendResult from './RecommendResult';
 import AllocationTable from './AllocationTable';
 import AskNirnayPanel from './AskNirnayPanel';
-import { MOCK_RECOMMEND_RESULT } from '@/data/mockRecommend';
-import hotspotData from '@/data/hotspots.json';
-import type { Hotspot } from '@/types';
-
-const hotspotsList: Hotspot[] = hotspotData.hotspots as Hotspot[];
+import CompareView from './CompareView';
+import { recommend } from '@/engine/optimizer';
+import { runMonteCarloAsync } from '@/engine/monteCarloAsync';
+import { hotspots } from '@/data/loadHotspots';
+import type { RecommendResult as RecommendResultType } from '@/types';
 
 export const RightPanel: React.FC = () => {
   const activeTab = useStore((s) => s.activeTab);
   const setActiveTab = useStore((s) => s.setActiveTab);
   const [isLoadingDispatch, setIsLoadingDispatch] = useState(false);
+  const [dispatchProgress, setDispatchProgress] = useState(0);
 
   const selectedHotspotId = useStore((s) => s.selectedHotspotId);
   const selectHotspot = useStore((s) => s.selectHotspot);
   const simResults = useStore((s) => s.simResults);
   const interventions = useStore((s) => s.interventions);
   const setIntervention = useStore((s) => s.setIntervention);
-  const recommendResult = useStore((s) => s.recommendResult) || MOCK_RECOMMEND_RESULT;
+  const recommendResult = useStore((s) => s.recommendResult);
   const setRecommendResult = useStore((s) => s.setRecommendResult);
   const closureDeltas = useStore((s) => s.closureDeltas);
+  const compareMode = useStore((s) => s.compareMode);
 
   // Active hotspot
   const hotspot =
-    hotspotsList.find((h) => h.id === selectedHotspotId) ||
-    hotspotsList[0];
+    hotspots.find((h) => h.id === selectedHotspotId) ||
+    hotspots[0];
 
   const simResult = hotspot
     ? simResults[hotspot.id] || {
-        minutesToAlert: Infinity,
-        minutesToClosure: Infinity,
+        minutesToAlert: null,
+        minutesToClosure: null,
         closureMinutes: 0,
         maxDepthM: 0,
         impactIndex: 0,
       }
     : {
-        minutesToAlert: Infinity,
-        minutesToClosure: Infinity,
+        minutesToAlert: null,
+        minutesToClosure: null,
         closureMinutes: 0,
         maxDepthM: 0,
         impactIndex: 0,
@@ -63,31 +65,58 @@ export const RightPanel: React.FC = () => {
 
   const handleRunRecommend = async () => {
     setIsLoadingDispatch(true);
+    setDispatchProgress(0);
+
     try {
-      // Attempt real API call if available, fall back cleanly to mock data
-      const res = await fetch('/api/recommend', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          hotspotId: hotspot.id,
-          rainMm: useStore.getState().rainMm,
-          durationH: useStore.getState().durationH,
-          availablePumps: useStore.getState().availablePumps,
-          availableCrews: useStore.getState().availableCrews,
-        }),
+      const { rainMm, durationH, availablePumps, availableCrews } = useStore.getState();
+
+      // 1. Run exact DP optimizer
+      const optResult = recommend(rainMm, durationH, availablePumps, availableCrews);
+
+      // 2. Run 200 Monte Carlo draws in Web Worker with progress updates
+      const mcResult = await runMonteCarloAsync(
+        rainMm,
+        durationH,
+        availablePumps,
+        availableCrews,
+        200,
+        42,
+        (progress) => {
+          setDispatchProgress(Math.round(progress * 100));
+        }
+      );
+
+      const mappedAllocations = optResult.optimal.allocations.map((a) => {
+        const h = hotspots.find((x) => x.id === a.hotspotId);
+        return {
+          hotspotId: a.hotspotId,
+          hotspotName: h?.name ?? a.hotspotId,
+          pumps: a.tempPumps,
+          crews: a.drainCleared ? 1 : 0,
+          drainCleared: a.drainCleared,
+        };
       });
-      if (res.ok) {
-        const data = await res.json();
-        setRecommendResult(data);
-      } else {
-        // Fallback fixture
-        setRecommendResult(MOCK_RECOMMEND_RESULT);
-      }
-    } catch {
-      // Network/offline fallback
-      setRecommendResult(MOCK_RECOMMEND_RESULT);
+
+      const fullResult: RecommendResultType = {
+        closureHoursSaved: optResult.closureHoursSavedVsEqual,
+        closureHoursSavedRange: [mcResult.closureHoursSaved.p10, mcResult.closureHoursSaved.p90],
+        impactIndexReduced: optResult.impactReducedPercentVsEqual,
+        impactIndexReducedRange: [mcResult.impactReducedPercent.p10, mcResult.impactReducedPercent.p90],
+        stabilityPercent: mcResult.stabilityPercent,
+        greedyClosureHours: optResult.greedy.totalClosureHours,
+        optimal: optResult.optimal,
+        greedy: optResult.greedy,
+        equalSplit: optResult.equalSplit,
+        historySplit: optResult.historySplit,
+        allocations: mappedAllocations,
+      };
+
+      setRecommendResult(fullResult);
+    } catch (err) {
+      console.error('Recommend optimization error:', err);
     } finally {
       setIsLoadingDispatch(false);
+      setDispatchProgress(0);
     }
   };
 
@@ -104,7 +133,7 @@ export const RightPanel: React.FC = () => {
           </div>
           <button
             onClick={() => setActiveTab('explain')}
-            className="h-6 px-2 bg-blue-50 hover:bg-blue-100 text-primary border border-blue-200 text-[11px] font-medium rounded-sm flex items-center gap-1 transition-colors"
+            className="h-6 px-2 bg-blue-50 hover:bg-blue-100 text-primary border border-blue-200 text-[11px] font-medium rounded-sm flex items-center gap-1 transition-colors cursor-pointer"
             title="Ask NIRNAY"
           >
             <span>Ask</span>
@@ -141,11 +170,14 @@ export const RightPanel: React.FC = () => {
           closureDelta={closureDeltas[hotspot.id]}
         />
 
+        {/* Compare A/B Section when Compare Mode is enabled */}
+        {compareMode && <CompareView />}
+
         {/* Tab Selector */}
         <div className="flex border-b border-border mb-4">
           <button
             onClick={() => setActiveTab('interventions')}
-            className={`flex-1 py-2 text-[12px] font-medium transition-colors border-b-2 text-center ${
+            className={`flex-1 py-2 text-[12px] font-medium transition-colors border-b-2 text-center cursor-pointer ${
               activeTab === 'interventions'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-text-muted hover:text-text-secondary'
@@ -155,7 +187,7 @@ export const RightPanel: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('recommend')}
-            className={`flex-1 py-2 text-[12px] font-medium transition-colors border-b-2 text-center ${
+            className={`flex-1 py-2 text-[12px] font-medium transition-colors border-b-2 text-center cursor-pointer ${
               activeTab === 'recommend'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-text-muted hover:text-text-secondary'
@@ -165,7 +197,7 @@ export const RightPanel: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('explain')}
-            className={`flex-1 py-2 text-[12px] font-medium transition-colors border-b-2 text-center ${
+            className={`flex-1 py-2 text-[12px] font-medium transition-colors border-b-2 text-center cursor-pointer ${
               activeTab === 'explain'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-text-muted hover:text-text-secondary'
@@ -181,12 +213,15 @@ export const RightPanel: React.FC = () => {
             <DispatchControls
               onFindAllocation={handleRunRecommend}
               isLoading={isLoadingDispatch}
+              progress={dispatchProgress}
             />
             <RecommendResult result={recommendResult} />
-            <AllocationTable
-              allocations={recommendResult.allocations}
-              onSelectHotspot={(id) => selectHotspot(id)}
-            />
+            {recommendResult && recommendResult.allocations && (
+              <AllocationTable
+                allocations={recommendResult.allocations}
+                onSelectHotspot={(id) => selectHotspot(id)}
+              />
+            )}
           </div>
         )}
 
@@ -207,7 +242,7 @@ export const RightPanel: React.FC = () => {
                       tempPumps: Math.max(0, currentInterventions.tempPumps - 1),
                     })
                   }
-                  className="w-7 h-7 border border-border rounded-sm hover:bg-surface flex items-center justify-center font-mono"
+                  className="w-7 h-7 border border-border rounded-sm hover:bg-surface flex items-center justify-center font-mono cursor-pointer"
                 >
                   -
                 </button>
@@ -220,7 +255,7 @@ export const RightPanel: React.FC = () => {
                       tempPumps: Math.min(4, currentInterventions.tempPumps + 1),
                     })
                   }
-                  className="w-7 h-7 border border-border rounded-sm hover:bg-surface flex items-center justify-center font-mono"
+                  className="w-7 h-7 border border-border rounded-sm hover:bg-surface flex items-center justify-center font-mono cursor-pointer"
                 >
                   +
                 </button>
@@ -248,7 +283,7 @@ export const RightPanel: React.FC = () => {
                       drainCleared: e.target.checked,
                     })
                   }
-                  className="w-4 h-4 rounded-sm border-border text-primary focus:ring-0"
+                  className="w-4 h-4 rounded-sm border-border text-primary focus:ring-0 cursor-pointer"
                 />
               </label>
 
@@ -269,7 +304,7 @@ export const RightPanel: React.FC = () => {
                       preDivert: e.target.checked,
                     })
                   }
-                  className="w-4 h-4 rounded-sm border-border text-primary focus:ring-0"
+                  className="w-4 h-4 rounded-sm border-border text-primary focus:ring-0 cursor-pointer"
                 />
               </label>
 
@@ -290,7 +325,7 @@ export const RightPanel: React.FC = () => {
                       roadClosed: e.target.checked,
                     })
                   }
-                  className="w-4 h-4 rounded-sm border-border text-primary focus:ring-0"
+                  className="w-4 h-4 rounded-sm border-border text-primary focus:ring-0 cursor-pointer"
                 />
               </label>
             </div>
