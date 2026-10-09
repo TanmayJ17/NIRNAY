@@ -7,22 +7,26 @@ export default {
   theme: {
     extend: {
       colors: {
-        /* Surfaces */
-        surface: '#F8F9FA',
-        white: '#FFFFFF',
-        border: '#E5E7EB',
-        'border-dark': '#D1D5DB',
+        /* Core UI Palette Tokens */
+        canvas: '#F4F7FA',
+        surface: '#FFFFFF',
+        border: '#DDE5EE',
+        ink: '#0F2A43',
+        muted: '#5B6B7C',
+        navy: '#0B2A4A',
+        accent: '#1D6FB8',
+        'accent-hover': '#185d9c',
+        accentSoft: '#E8F1FA',
+        water: '#4F9BD9',
 
-        /* Primary accent */
-        primary: '#1D4ED8',
-        'primary-hover': '#1E40AF',
+        /* Backward-compatibility aliases mapped to strict tokens */
+        'text-primary': '#0F2A43',
+        'text-secondary': '#5B6B7C',
+        'text-muted': '#5B6B7C',
+        primary: '#1D6FB8',
+        'primary-hover': '#185d9c',
 
-        /* Text */
-        'text-primary': '#0F172A',
-        'text-secondary': '#475467',
-        'text-muted': '#9CA3AF',
-
-        /* Semantic — marker colors */
+        /* Semantic — Map Pins & Hazard-only Status */
         'status-green': '#16A34A',
         'status-amber': '#D97706',
         'status-red': '#DC2626',
@@ -36,9 +40,6 @@ export default {
       },
       borderRadius: {
         sm: '4px',
-      },
-      spacing: {
-        /* 8px base rhythm already default in Tailwind */
       },
     },
   },

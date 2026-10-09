@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { useStore, getPinStatus } from '@/store/useStore';
-import { MAP_CENTER, MAP_ZOOM, MAP_TILE_URL, MAP_ATTRIBUTION, PIN_COLORS } from '@/config';
+import { MAP_CENTER, MAP_ZOOM, MAP_STYLE_URL, MAP_ATTRIBUTION, PIN_COLORS } from '@/config';
 import { hotspots } from '@/data/loadHotspots';
 import hotspotData from '@/data/hotspots.json';
 
@@ -10,6 +10,7 @@ export const MapView: React.FC = () => {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
 
   const selectedHotspotId = useStore((s) => s.selectedHotspotId);
   const selectHotspot = useStore((s) => s.selectHotspot);
@@ -23,35 +24,20 @@ export const MapView: React.FC = () => {
     try {
       const map = new maplibregl.Map({
         container: mapContainerRef.current,
-        style: {
-          version: 8,
-          sources: {
-            'carto-light': {
-              type: 'raster',
-              tiles: [MAP_TILE_URL],
-              tileSize: 256,
-              attribution: MAP_ATTRIBUTION,
-            },
-          },
-          layers: [
-            {
-              id: 'carto-light-tiles',
-              type: 'raster',
-              source: 'carto-light',
-              minzoom: 0,
-              maxzoom: 20,
-            },
-          ],
-        },
+        style: MAP_STYLE_URL,
         center: MAP_CENTER,
         zoom: MAP_ZOOM,
         attributionControl: false,
       });
 
       map.on('error', (e) => {
-        // Non-fatal tile warnings shouldn't break the UI, but log them
-        if (e.error?.message?.includes('WebGL') || e.error?.message?.includes('context')) {
-          setMapError('MapLibre WebGL context could not be initialized.');
+        // Catch WebGL, context or style loading errors
+        if (
+          e.error?.message?.includes('WebGL') ||
+          e.error?.message?.includes('context') ||
+          e.error?.message?.includes('style')
+        ) {
+          setMapError('Map unavailable');
         }
       });
 
@@ -63,7 +49,10 @@ export const MapView: React.FC = () => {
 
       // Add attribution at bottom right
       map.addControl(
-        new maplibregl.AttributionControl({ compact: true }),
+        new maplibregl.AttributionControl({
+          compact: true,
+          customAttribution: MAP_ATTRIBUTION,
+        }),
         'bottom-right'
       );
 
@@ -98,7 +87,7 @@ export const MapView: React.FC = () => {
               'line-cap': 'round',
             },
             paint: {
-              'line-color': '#1D4ED8',
+              'line-color': '#1D6FB8',
               'line-width': 3,
               'line-opacity': 0.85,
             },
@@ -109,7 +98,7 @@ export const MapView: React.FC = () => {
       mapRef.current = map;
     } catch (err: any) {
       console.warn('Map initialization fallback triggered:', err);
-      setMapError(err?.message || 'Map rendering unavailable');
+      setMapError('Map unavailable');
     }
 
     return () => {
@@ -129,7 +118,7 @@ export const MapView: React.FC = () => {
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
 
-    // Render every hotspot from loadHotspots as a small colored circle
+    // Render every hotspot with distinct shape + colour cues
     hotspots.forEach((hotspot) => {
       const sim = simResults[hotspot.id] || {
         minutesToAlert: null,
@@ -140,44 +129,57 @@ export const MapView: React.FC = () => {
       };
 
       const status = getPinStatus(sim);
-      const isClosed = status === 'red';
       const isSelected = hotspot.id === selectedHotspotId;
       const activeDelta = closureDeltas[hotspot.id];
 
-      // Color mapping
-      const markerColor =
-        status === 'red'
-          ? PIN_COLORS.red
-          : status === 'amber'
-          ? PIN_COLORS.amber
-          : PIN_COLORS.green;
-
-      // Create custom DOM marker
+      // Create custom DOM marker wrapper
       const el = document.createElement('div');
       el.className = 'cursor-pointer group flex items-center relative';
 
-      // Pin circle
-      const dot = document.createElement('div');
-      dot.className =
-        'w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm transition-transform hover:scale-125';
-      dot.style.backgroundColor = markerColor;
-      if (isSelected) {
-        dot.className += ' ring-2 ring-primary ring-offset-1 scale-125';
+      // Shape cue + Colour:
+      // Clear = Circle
+      // Alert = Triangle
+      // Closed = Square
+      if (status === 'green') {
+        const circle = document.createElement('div');
+        circle.className = `w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm transition-transform hover:scale-125 ${
+          isSelected ? 'ring-2 ring-accent ring-offset-1 scale-125' : ''
+        }`;
+        circle.style.backgroundColor = PIN_COLORS.green;
+        el.appendChild(circle);
+      } else if (status === 'amber') {
+        const triangle = document.createElement('div');
+        triangle.className = `w-4 h-4 flex items-center justify-center transition-transform hover:scale-125 ${
+          isSelected ? 'scale-125' : ''
+        }`;
+        triangle.innerHTML = `
+          <svg viewBox="0 0 20 20" class="w-4 h-4 ${isSelected ? 'stroke-accent stroke-2' : ''}" style="filter: drop-shadow(0 1px 1px rgba(0,0,0,0.15))">
+            <polygon points="10,2 18,17 2,17" fill="${PIN_COLORS.amber}" stroke="#FFFFFF" stroke-width="1.5" />
+          </svg>
+        `;
+        el.appendChild(triangle);
+      } else {
+        // Red closed square
+        const square = document.createElement('div');
+        square.className = `w-3.5 h-3.5 rounded-[1px] border-2 border-white shadow-sm transition-transform hover:scale-125 ${
+          isSelected ? 'ring-2 ring-accent ring-offset-1 scale-125' : ''
+        }`;
+        square.style.backgroundColor = PIN_COLORS.red;
+        el.appendChild(square);
       }
-      el.appendChild(dot);
 
-      // Labels for selected, closed, and active delta
-      if (isSelected || isClosed || activeDelta) {
+      // Marker labels: ONLY the selected hotspot is labelled
+      if (isSelected) {
         const label = document.createElement('div');
         label.className =
-          'absolute left-4 top-1/2 -translate-y-1/2 whitespace-nowrap bg-white/95 px-2 py-0.5 rounded text-[11px] font-medium border border-border shadow-sm flex items-center gap-1.5 pointer-events-none z-10';
+          'absolute left-4 top-1/2 -translate-y-1/2 whitespace-nowrap bg-surface px-2 py-0.5 rounded text-[11px] font-medium border border-border shadow-sm flex items-center gap-1.5 pointer-events-none z-10 text-ink';
 
         const labelText = document.createElement('span');
         labelText.textContent = hotspot.name.replace(' Underpass', '').replace(' Flyover', '');
-        labelText.className = 'text-text-primary';
+        labelText.className = 'font-semibold text-ink';
         label.appendChild(labelText);
 
-        if (isClosed) {
+        if (status === 'red') {
           const closedBadge = document.createElement('span');
           closedBadge.textContent = 'Closed';
           closedBadge.className = 'text-status-red font-semibold text-[10px]';
@@ -187,7 +189,7 @@ export const MapView: React.FC = () => {
         if (activeDelta) {
           const deltaBadge = document.createElement('span');
           deltaBadge.textContent = `(${activeDelta})`;
-          deltaBadge.className = 'text-primary font-mono text-[10px] font-semibold';
+          deltaBadge.className = 'text-accent font-mono text-[10px] font-semibold';
           label.appendChild(deltaBadge);
         }
 
@@ -224,13 +226,13 @@ export const MapView: React.FC = () => {
 
       {/* Fallback View if MapLibre fails */}
       {mapError && (
-        <div className="absolute inset-0 bg-[#F3F4F6] p-6 flex flex-col items-center justify-center text-center z-20">
+        <div className="absolute inset-0 bg-[#EEF2F6] p-6 flex flex-col items-center justify-center text-center z-20">
           <div className="max-w-md bg-white border border-border rounded-sm p-4 shadow-sm">
             <h3 className="text-[13px] font-semibold text-text-primary mb-1">
-              Interactive Map Fallback Mode
+              Hotspots Overview
             </h3>
             <p className="text-[11px] text-text-muted mb-3 leading-relaxed">
-              MapLibre tiles unavailable. Hydrological simulator and dispatch optimization remain fully operational.
+              Map unavailable. Hydrological simulator and dispatch optimization remain fully operational.
             </p>
             <div className="grid grid-cols-2 gap-2 text-left max-h-60 overflow-y-auto panel-scroll">
               {hotspots.map((h) => {
@@ -274,38 +276,70 @@ export const MapView: React.FC = () => {
         </div>
       )}
 
-      {/* Hotspot Status Legend (Bottom-Left) */}
-      <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm border border-border rounded-sm p-3 shadow-sm select-none z-10">
-        <div className="text-[10px] font-semibold tracking-wider text-text-secondary uppercase mb-2">
-          HOTSPOT STATUS LEGEND
-        </div>
-        <div className="space-y-1.5 text-[11px]">
-          <div className="flex items-center gap-2">
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: PIN_COLORS.green }}
-            />
-            <span className="text-text-secondary">Clear (&lt;60 min)</span>
+      {/* Collapsible Hotspot Status Legend (Bottom-Left Corner) */}
+      <div className="absolute bottom-4 left-4 bg-surface/95 backdrop-blur-sm border border-border rounded-sm shadow-sm select-none z-10 max-w-[220px]">
+        {/* Header Toggle */}
+        <button
+          onClick={() => setIsLegendOpen(!isLegendOpen)}
+          className="w-full flex items-center justify-between gap-2 p-2 text-[11px] font-semibold tracking-wider text-muted uppercase hover:bg-canvas transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-accent" />
+            <span>Map Legend</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: PIN_COLORS.amber }}
-            />
-            <span className="text-text-secondary">Alert (&lt;60 min)</span>
+          <svg
+            className={`w-3 h-3 text-muted transition-transform ${isLegendOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {/* Collapsible Content */}
+        {isLegendOpen && (
+          <div className="p-2.5 pt-1 space-y-2 text-[11px] border-t border-border/70">
+            {/* Clear (Circle) */}
+            <div className="flex items-center gap-2">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0 border border-white"
+                style={{ backgroundColor: PIN_COLORS.green }}
+              />
+              <span className="text-muted">
+                <strong className="text-ink font-medium">Clear</strong>: stays below 6 in
+              </span>
+            </div>
+
+            {/* Alert (Triangle) */}
+            <div className="flex items-center gap-2">
+              <svg viewBox="0 0 20 20" className="w-3 h-3 shrink-0">
+                <polygon points="10,2 18,17 2,17" fill={PIN_COLORS.amber} />
+              </svg>
+              <span className="text-muted">
+                <strong className="text-ink font-medium">Alert</strong>: reaches 6 in, below 8 in
+              </span>
+            </div>
+
+            {/* Closed (Square) */}
+            <div className="flex items-center gap-2">
+              <span
+                className="w-2.5 h-2.5 rounded-[1px] shrink-0 border border-white"
+                style={{ backgroundColor: PIN_COLORS.red }}
+              />
+              <span className="text-muted">
+                <strong className="text-ink font-medium">Closed</strong>: reaches 8 in
+              </span>
+            </div>
+
+            {/* Hospital route line */}
+            <div className="flex items-center gap-2 pt-1 border-t border-border/60">
+              <span className="w-3.5 h-0.5 bg-accent rounded-full shrink-0" />
+              <span className="text-muted">Hospital route</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: PIN_COLORS.red }}
-            />
-            <span className="text-text-secondary">Closed (Depth &gt;20cm)</span>
-          </div>
-          <div className="flex items-center gap-2 pt-1 border-t border-border/60">
-            <span className="w-3.5 h-0.5 bg-primary rounded-full shrink-0" />
-            <span className="text-text-secondary">Hospital route</span>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

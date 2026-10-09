@@ -60,21 +60,30 @@ export const DETOUR_PENALTY_WEIGHT = 0.05;
 export const POPULATION_WEIGHT = 0.0001;
 
 // --- Map & Tile Settings ---
-export const MAP_TILE_URL =
-  'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+export const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
 
 export const MAP_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors &copy; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>';
 
 export const MAP_CENTER: [number, number] = [77.2090, 28.6139];
 export const MAP_ZOOM = 11;
+
+// --- Fleet & Resource Limits ---
+// UNVERIFIED: PWD review July 2026, re-check source
+export const FLEET = {
+  cityWideMobilePumps: 306,
+  maxCrews: 50,
+} as const;
+
+// ASSUMPTION: Maximum mobile dewatering pumps that can physically deploy at one underpass
+export const MAX_PUMPS_PER_HOTSPOT = 4;
 
 // --- Scenario Defaults ---
 export const DEFAULT_RAIN_MM = 100;
 export const DEFAULT_DURATION_H = 4;
 
-export const DEFAULT_AVAILABLE_PUMPS = 12;
-export const DEFAULT_AVAILABLE_CREWS = 8;
+export const DEFAULT_AVAILABLE_PUMPS = 10;
+export const DEFAULT_AVAILABLE_CREWS = 3;
 
 export const PIN_COLORS = {
   green: '#16A34A',

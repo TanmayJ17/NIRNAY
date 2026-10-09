@@ -9,12 +9,16 @@ export const Landing: React.FC = () => {
       {/* Navigation Bar */}
       <header className="h-14 bg-white border-b border-border sticky top-0 z-50 px-4 sm:px-8 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link to="/" className="text-[16px] font-semibold tracking-tight text-text-primary hover:opacity-90">
-            NIRNAY
+          <Link to="/" className="flex items-center gap-2 text-[16px] font-bold tracking-tight text-ink hover:opacity-90">
+            <svg viewBox="0 0 32 32" className="w-6 h-6 text-navy shrink-0" aria-hidden="true">
+              <path d="M16 3C16 3 6 14 6 20a10 10 0 0 0 20 0C26 14 16 3 16 3Z" fill="currentColor"/>
+              <path d="M9 21q3.5-2.5 7 0t7 0" stroke="#FFFFFF" strokeWidth="2" fill="none"/>
+            </svg>
+            <span>NIRNAY</span>
           </Link>
-          <span className="text-[12px] text-text-muted">Delhi PWD</span>
+          <span className="text-[12px] text-muted">Delhi</span>
           <div className="h-4 w-px bg-border hidden sm:block" />
-          <span className="hidden sm:inline-block text-[11px] font-medium text-text-secondary bg-surface px-2 py-0.5 rounded-sm border border-border">
+          <span className="hidden sm:inline-block text-[11px] font-medium text-muted bg-canvas px-2 py-0.5 rounded-sm border border-border">
             Pre-Storm Decision Support
           </span>
         </div>
@@ -419,27 +423,24 @@ export const Landing: React.FC = () => {
       </main>
 
       {/* FOOTER */}
-      <footer className="bg-white border-t border-border mt-16 py-6 px-4 sm:px-8">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px] text-text-muted">
+      <footer className="bg-surface border-t border-border mt-16 py-6 px-4 sm:px-8 text-muted">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px]">
           <div className="flex items-center gap-4">
             <a
               href="https://github.com/TanmayJ17/NIRNAY"
               target="_blank"
               rel="noreferrer"
-              className="text-text-secondary hover:text-text-primary transition-colors"
+              className="text-muted hover:text-ink transition-colors"
             >
               GitHub
             </a>
             <span className="text-border">|</span>
-            <a
-              href="#"
-              className="text-text-secondary hover:text-text-primary transition-colors"
-            >
-              Blog
-            </a>
+            <span className="text-muted">
+              Independent prototype for Delhi PWD workflows. Not an official PWD product.
+            </span>
           </div>
 
-          <div className="text-center sm:text-right font-medium text-text-secondary">
+          <div className="text-center sm:text-right font-medium text-ink">
             Decision support, not flood forecasting.
           </div>
         </div>

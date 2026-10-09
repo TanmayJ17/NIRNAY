@@ -70,15 +70,19 @@ export const RightPanel: React.FC = () => {
     try {
       const { rainMm, durationH, availablePumps, availableCrews } = useStore.getState();
 
-      // 1. Run exact DP optimizer
-      const optResult = recommend(rainMm, durationH, availablePumps, availableCrews);
+      // Compute physical deployment ceiling across all 15 hotspots
+      const usablePumps = Math.min(availablePumps, hotspots.length * 4);
+      const usableCrews = Math.min(availableCrews, hotspots.length);
+
+      // 1. Run exact DP optimizer using only usable resources
+      const optResult = recommend(rainMm, durationH, usablePumps, usableCrews);
 
       // 2. Run 200 Monte Carlo draws in Web Worker with progress updates
       const mcResult = await runMonteCarloAsync(
         rainMm,
         durationH,
-        availablePumps,
-        availableCrews,
+        usablePumps,
+        usableCrews,
         200,
         42,
         (progress) => {
