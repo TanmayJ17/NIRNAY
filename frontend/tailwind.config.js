@@ -1,19 +1,45 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        /* Surfaces */
+        surface: '#F8F9FA',
+        white: '#FFFFFF',
+        border: '#E5E7EB',
+        'border-dark': '#D1D5DB',
+
+        /* Primary accent */
+        primary: '#1D4ED8',
+        'primary-hover': '#1E40AF',
+
+        /* Text */
+        'text-primary': '#0F172A',
+        'text-secondary': '#475467',
+        'text-muted': '#9CA3AF',
+
+        /* Semantic — marker colors */
+        'status-green': '#16A34A',
+        'status-amber': '#D97706',
+        'status-red': '#DC2626',
+        'status-green-bg': '#DCFCE7',
+        'status-amber-bg': '#FEF3C7',
+        'status-red-bg': '#FEE2E2',
       },
       fontFamily: {
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-      }
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
+      borderRadius: {
+        sm: '4px',
+      },
+      spacing: {
+        /* 8px base rhythm already default in Tailwind */
+      },
     },
   },
   plugins: [],

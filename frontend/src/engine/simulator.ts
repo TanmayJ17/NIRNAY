@@ -1,161 +1,139 @@
 /**
- * NIRNAY Client-Side Hydrological Simulator (TypeScript Port)
- * Ported from Member 1's reference engine. Runs at 60 FPS on user interaction.
+ * =========================================================================
+ * TEMPORARY STUB — simulator.ts
+ *
+ * This is a placeholder hydrological simulation stub for NIRNAY.
+ * Author: Frontend Team (Temporary)
+ * Note: Member 1 / Team will replace this file with the real Python port.
+ * =========================================================================
  */
 
-export interface Hotspot {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-  road_name: string;
-  road_class: string;
-  traffic_pcu_per_hour: number;
-  hospital_route: boolean;
-  hospital_name?: string;
-  population_300m: number;
-  catchment_km2: number;
-  runoff_coeff_default: number;
-  surface_area_m2: number;
-  gravity_drain_capacity_m3s: number;
-  permanent_pump_capacity_m3s: number;
-  detour_penalty_mins: number;
-  historical_closure_freq_annual?: number;
-}
+import type { Hotspot, Interventions, SimulationResult } from '@/types';
+import { ALERT_THRESHOLD_M, CLOSURE_THRESHOLD_M } from '@/config';
 
-export interface Intervention {
-  tempPumps: number;      // 0 to 3 mobile pumps (0.045 m3/s each)
-  drainCleared: boolean;  // Hazard layer: restores drain to 100% capacity
-  preDivert: boolean;     // Impact layer: removes 60% traffic exposure
-  roadClosed: boolean;    // Impact layer: zero traffic exposure
-}
+/**
+ * Run hydrology simulation for a single hotspot over a rainfall event.
+ *
+ * @param hotspot Physical parameters of the underpass
+ * @param rainMm Total storm rainfall in millimeters
+ * @param durationH Duration of storm in hours
+ * @param interventions Deployed operational mitigations
+ * @returns SimulationResult with alert/closure timings, duration, depth, and relative impact index
+ */
+export function simulate(
+  hotspot: Hotspot,
+  rainMm: number,
+  durationH: number,
+  interventions: Interventions
+): SimulationResult {
+  const dtSeconds = 60; // 1-minute time steps
+  const totalSteps = Math.max(1, Math.floor((durationH * 3600) / dtSeconds));
+  const tPeakSec = (durationH * 3600) / 3.0; // Synthetic hyetograph peak at 1/3 duration
 
-export interface HotspotSimulationResult {
-  id: string;
-  name: string;
-  maxDepthM: number;
-  timeToAlertMins: number | null;
-  timeToClosureMins: number | null;
-  closureDurationMins: number;
-  impactScore: number;
-  depthSeries: number[];
-  status: 'OPEN' | 'ALERT' | 'CLOSED';
-}
-
-export interface SimulationOutput {
-  rainTotalMm: number;
-  durationHours: number;
-  totalClosureHours: number;
-  totalImpactScore: number;
-  hotspots: Record<string, HotspotSimulationResult>;
-}
-
-export function runSimulationClient(
-  hotspots: Hotspot[],
-  rainTotalMm: number,
-  durationHours: number,
-  interventions: Record<string, Intervention>,
-  dtSeconds = 60
-): SimulationOutput {
-  const totalSteps = Math.max(1, Math.floor((durationHours * 3600) / dtSeconds));
-  const tPeakSec = (durationHours * 3600) / 3.0;
-  const results: Record<string, HotspotSimulationResult> = {};
-  let totalClosureMinutes = 0;
-  let totalImpact = 0;
-
-  const rainfallIntensity = (tSec: number): number => {
+  // Triangular hyetograph intensity in mm/h
+  const getRainIntensity = (tSec: number): number => {
     if (tSec <= tPeakSec) {
-      return ((2.0 * rainTotalMm) / durationHours) * (tSec / Math.max(1, tPeakSec));
-    } else if (tSec <= durationHours * 3600) {
+      return ((2.0 * rainMm) / durationH) * (tSec / tPeakSec);
+    } else if (tSec <= durationH * 3600) {
       return (
-        ((2.0 * rainTotalMm) / durationHours) *
-        ((durationHours * 3600 - tSec) / Math.max(1, durationHours * 3600 - tPeakSec))
+        ((2.0 * rainMm) / durationH) *
+        ((durationH * 3600 - tSec) / (durationH * 3600 - tPeakSec))
       );
     }
     return 0.0;
   };
 
-  for (const hp of hotspots) {
-    const interv = interventions[hp.id] || {
-      tempPumps: 0,
-      drainCleared: false,
-      preDivert: false,
-      roadClosed: false,
-    };
+  // Interventions impact
+  // Drain clearance restores gravity drain efficiency from 50% to 100%
+  const drainEfficiency = interventions.drainCleared ? 1.0 : 0.50;
+  const qDrain = hotspot.gravity_drain_capacity_m3s * drainEfficiency;
 
-    const drainFactor = interv.drainCleared ? 1.0 : 0.5;
-    const qDrain = hp.gravity_drain_capacity_m3s * drainFactor;
-    const qPumps = hp.permanent_pump_capacity_m3s + interv.tempPumps * 0.045;
+  // Permanent pumps operate at standard standby (75%); each temp pump adds 0.15 m3/s
+  const qPumps =
+    hotspot.permanent_pump_capacity_m3s * 0.75 +
+    interventions.tempPumps * 0.15;
 
-    let h = 0.0;
-    let maxH = 0.0;
-    let tAlert: number | null = null;
-    let tClose: number | null = null;
-    let closureSteps = 0;
-    const depthSeries: number[] = [];
+  const qOut = qDrain + qPumps;
 
-    for (let step = 0; step < totalSteps; step++) {
-      const tSec = step * dtSeconds;
-      const iMmh = rainfallIntensity(tSec);
+  // Pre-divert reduces localized inflow volume entering the sag point
+  const divertMultiplier = interventions.preDivert ? 0.70 : 1.0;
 
-      // Rational method inflow: Q_in = 0.278 * C * i * A (m3/s)
-      const qIn = 0.278 * hp.runoff_coeff_default * iMmh * hp.catchment_km2;
-      const qOut = qDrain + qPumps;
-      const dh = ((qIn - qOut) / hp.surface_area_m2) * dtSeconds;
+  // Delhi sag catchment fraction: ~5% of upstream basin directly pools into sag bowl
+  const SAG_CATCHMENT_FRACTION = 0.052;
+  const effectiveCatchmentKm2 = hotspot.catchment_km2 * SAG_CATCHMENT_FRACTION;
 
-      h = Math.max(0.0, h + dh);
-      if (h > maxH) maxH = h;
+  let currentDepth = 0.0;
+  let maxDepth = 0.0;
+  let tAlertSec: number | null = null;
+  let tCloseSec: number | null = null;
+  let closureMinutes = 0;
 
-      if (h >= 0.15 && tAlert === null) tAlert = Math.floor(tSec / 60);
-      if (h >= 0.20) {
-        if (tClose === null) tClose = Math.floor(tSec / 60);
-        closureSteps++;
-      }
+  for (let step = 0; step < totalSteps; step++) {
+    const tSec = step * dtSeconds;
+    const intensityMmh = getRainIntensity(tSec);
 
-      if (step % 5 === 0 || step === totalSteps - 1) {
-        depthSeries.push(Number(h.toFixed(3)));
-      }
+    // Rational method: Q = 0.278 * C * I * A (m3/s)
+    const qIn =
+      0.278 *
+      hotspot.runoff_coeff_default *
+      intensityMmh *
+      effectiveCatchmentKm2 *
+      divertMultiplier;
+
+    // Rate of depth change
+    const deltaHeight =
+      ((qIn - qOut) / hotspot.surface_area_m2) * dtSeconds;
+
+    currentDepth = Math.max(
+      0.0,
+      Math.min(hotspot.storage_depth_max_m, currentDepth + deltaHeight)
+    );
+
+    if (currentDepth > maxDepth) {
+      maxDepth = currentDepth;
     }
 
-    const closureDurationMins = closureSteps * Math.floor(dtSeconds / 60);
-    totalClosureMinutes += closureDurationMins;
+    if (currentDepth >= ALERT_THRESHOLD_M && tAlertSec === null) {
+      tAlertSec = tSec;
+    }
 
-    let trafficWeight = hp.traffic_pcu_per_hour / 3000.0;
-    if (interv.preDivert) trafficWeight *= 0.4;
-    if (interv.roadClosed) trafficWeight = 0.1;
-
-    const detourFactor = hp.detour_penalty_mins / 20.0;
-    const hospitalMult = hp.hospital_route ? 2.5 : 1.0;
-    const popMult = 1.0 + hp.population_300m / 20000.0;
-
-    let rawImpact =
-      closureDurationMins * trafficWeight * detourFactor * hospitalMult * popMult;
-    if (interv.preDivert) rawImpact += 25.0;
-
-    totalImpact += rawImpact;
-
-    let status: 'OPEN' | 'ALERT' | 'CLOSED' = 'OPEN';
-    if (maxH >= 0.20) status = 'CLOSED';
-    else if (maxH >= 0.15) status = 'ALERT';
-
-    results[hp.id] = {
-      id: hp.id,
-      name: hp.name,
-      maxDepthM: Number(maxH.toFixed(3)),
-      timeToAlertMins: tAlert,
-      timeToClosureMins: tClose,
-      closureDurationMins,
-      impactScore: Number(rawImpact.toFixed(2)),
-      depthSeries,
-      status,
-    };
+    if (currentDepth >= CLOSURE_THRESHOLD_M) {
+      if (tCloseSec === null) {
+        tCloseSec = tSec;
+      }
+      closureMinutes += 1;
+    }
   }
 
+  // Timing in minutes
+  const minutesToAlert =
+    tAlertSec !== null ? Math.round(tAlertSec / 60) : Infinity;
+  const minutesToClosure =
+    tCloseSec !== null ? Math.round(tCloseSec / 60) : Infinity;
+
+  // Impact Index calculation (relative score, not count of vehicles or people)
+  let trafficWeight = hotspot.traffic_pcu_per_hour / 3000.0;
+  if (interventions.preDivert) trafficWeight *= 0.4;
+  if (interventions.roadClosed) trafficWeight = 0.08;
+
+  const detourFactor = hotspot.detour_penalty_mins / 20.0;
+  const hospitalMultiplier = hotspot.hospital_route ? 2.5 : 1.0;
+  const popFactor = 1.0 + hotspot.population_300m / 20000.0;
+
+  const rawImpact =
+    closureMinutes *
+    trafficWeight *
+    detourFactor *
+    hospitalMultiplier *
+    popFactor;
+
+  const impactIndex = Math.round(rawImpact);
+
   return {
-    rainTotalMm,
-    durationHours,
-    totalClosureHours: Number((totalClosureMinutes / 60).toFixed(2)),
-    totalImpactScore: Number(totalImpact.toFixed(2)),
-    hotspots: results,
+    minutesToAlert,
+    minutesToClosure,
+    closureMinutes,
+    maxDepthM: Number(Math.min(maxDepth, hotspot.storage_depth_max_m).toFixed(3)),
+    impactIndex,
   };
 }

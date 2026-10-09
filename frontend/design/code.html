@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NIRNAY — Scenario Simulator</title>
+<!-- Material Symbols & Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<!-- Leaflet CSS -->
+<link crossorigin="" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" rel="stylesheet"/>
+<!-- Leaflet JS -->
+<script crossorigin="" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: "#EEF2FF",
+              100: "#E0E7FF",
+              200: "#C7D2FE",
+              600: "#2563EB",
+              700: "#1D4ED8",
+              800: "#1E40AF",
+              900: "#1E3A8A",
+            },
+            civic: {
+              bg: "#F8F9FA",
+              card: "#FFFFFF",
+              subtle: "#F3F4F6",
+              border: "#E5E7EB",
+              borderDark: "#D1D5DB",
+              text: "#111827",
+              textMuted: "#6B7280",
+              textFaint: "#9CA3AF",
+            }
+          },
+          fontFamily: {
+            sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"],
+          },
+          boxShadow: {
+            'calm': '0 1px 2px rgba(0, 0, 0, 0.05)',
+            'float': '0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)',
+          }
+        }
+      }
+    };
+  </script>
+<style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: 'Inter', -apple-system, sans-serif;
+        background-color: #F8F9FA;
+        color: #111827;
+        -webkit-font-smoothing: antialiased;
+      }
+    }
+    .leaflet-container {
+      background: #f4f5f5;
+      outline: none;
+    }
+    .leaflet-bar {
+      border: 1px solid #E5E7EB !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+      border-radius: 8px !important;
+      overflow: hidden;
+    }
+    .leaflet-bar a {
+      background-color: #ffffff !important;
+      color: #111827 !important;
+      border-bottom: 1px solid #E5E7EB !important;
+      width: 28px !important;
+      height: 28px !important;
+      line-height: 28px !important;
+    }
+    .leaflet-bar a:hover {
+      background-color: #F3F4F6 !important;
+    }
+    .hotspot-label-selected {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #FFFFFF;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      border: 1px solid #FDA4AF;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .hotspot-label-closed {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #FFFFFF;
+      padding: 2px 7px;
+      border-radius: 9999px;
+      border: 1px solid #FECDD3;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body class="bg-civic-bg text-civic-text antialiased flex flex-col h-screen overflow-hidden select-none">
+<!-- TOP BAR: Navigation & Scenarios -->
+<header class="h-14 bg-white border-b border-civic-border shrink-0 px-6 flex items-center justify-between z-40">
+<div class="flex items-center gap-3">
+<!-- Wordmark -->
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold tracking-tight text-[18px] text-civic-text">NIRNAY</span>
+<span class="text-[12px] text-civic-textMuted font-medium">निर्णय</span>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-brand-50 text-brand-900 border border-brand-100">
+      Scenario Simulator
+    </span>
+</div>
+<div class="flex items-center gap-3">
+<!-- Segmented Run Mode Switcher -->
+<div class="bg-civic-subtle p-0.5 rounded-lg border border-civic-border flex items-center shadow-inner">
+<button class="px-3 py-1 text-[12px] font-medium text-civic-textMuted hover:text-civic-text rounded-md transition-all" type="button">
+        Single run
+      </button>
+<button class="px-3 py-1 text-[12px] font-medium bg-white text-civic-text rounded-md shadow-calm border border-civic-border transition-all" type="button">
+        Compare A / B
+      </button>
+</div>
+<!-- Save scenario button -->
+<button class="h-8 px-3.5 bg-white hover:bg-civic-subtle border border-civic-border text-civic-text text-[12px] font-medium rounded-lg flex items-center gap-1.5 shadow-calm transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px] text-civic-textMuted">bookmark_border</span>
+<span>Save scenario</span>
+</button>
+</div>
+</header>
+<!-- SUBHEADER: High-Trust Model Assurance -->
+<div class="h-8 bg-civic-bg border-b border-civic-border px-6 flex items-center justify-between text-[11.5px] text-civic-textMuted shrink-0">
+<div class="flex items-center gap-2">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+<span>Rational method + storage balance. Scenario simulation, not forecasting.</span>
+</div>
+<div class="font-mono text-[11px] text-civic-textFaint tracking-wide">
+    BASINS: BARAPULLAH &amp; NAJAFGARH CONFLUENCE
+  </div>
+</div>
+<!-- MAIN WORKSPACE SPLIT (Map 62% | Right Panel 38%) -->
+<div class="flex-1 flex min-h-0 w-full overflow-hidden">
+<!-- LEFT: Map using Leaflet + CARTO Positron Light -->
+<div class="w-[62%] relative bg-slate-50 border-r border-civic-border flex flex-col overflow-hidden">
+<div class="w-full h-full z-0" id="leaflet-map"></div>
+<!-- Hospital access route floating pill label over map -->
+<div class="absolute top-4 left-4 bg-white/95 backdrop-blur-sm border border-brand-200 px-3 py-1 rounded-full shadow-calm pointer-events-none flex items-center gap-2 z-10">
+<div class="w-2 h-2 rounded-full bg-blue-700 animate-pulse"></div>
+<span class="text-[11px] text-blue-700 font-semibold tracking-tight whitespace-nowrap">Hospital access route (LNJP–AIIMS)</span>
+</div>
+<!-- HOTSPOT STATUS LEGEND (Bottom-Left) -->
+<div class="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm border border-civic-border rounded-xl p-3 shadow-float z-10">
+<div class="text-[10px] font-semibold text-civic-textFaint uppercase tracking-wider mb-2">HOTSPOT STATUS LEGEND</div>
+<div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] text-civic-textMuted font-medium">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-1 ring-white"></span>
+<span>Clear (&gt;60 min)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-amber-500 ring-1 ring-white"></span>
+<span>Alert (&lt;60 min)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-rose-600 ring-1 ring-white"></span>
+<span>Closed (Depth &gt;20cm)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3.5 h-1 bg-[#1d4ed8] rounded-full"></span>
+<span class="text-[#1d4ed8] font-semibold">Hospital route</span>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT PANEL (38% width) -->
+<div class="w-[38%] bg-civic-bg flex flex-col overflow-y-auto p-4 gap-3">
+<!-- CARD 1: Selected Hotspot Cross-Section -->
+<div class="bg-civic-card border border-civic-border rounded-xl p-3.5 shadow-calm">
+<div class="flex items-start justify-between pb-2.5 border-b border-civic-border">
+<div>
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-rose-600" id="cs-status-indicator"></span>
+<h2 class="text-[15px] font-semibold text-civic-text tracking-tight" id="cs-hotspot-title">Minto Bridge underpass</h2>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="text-[10px] font-semibold tracking-wide bg-brand-50 text-brand-900 border border-brand-100 px-2 py-0.5 rounded-full">
+              Hospital route
+            </span>
+<span class="text-[11.5px] text-civic-textMuted font-mono">CH: 28+420 · NDLS South</span>
+</div>
+</div>
+</div>
+<!-- Architectural Profile SVG Cross-Section -->
+<div class="my-3 bg-[#FAF9F7] border border-civic-border rounded-lg p-2.5">
+<div class="flex items-center justify-between mb-1.5 text-[10px] text-civic-textFaint">
+<span class="font-semibold uppercase tracking-wider">ELEVATION CROSS-SECTION</span>
+<span class="font-mono text-civic-textMuted">Culvert #3B Dip</span>
+</div>
+<svg class="w-full h-24" viewbox="0 0 300 115" xmlns="http://www.w3.org/2000/svg">
+<!-- Road Embankment Structures -->
+<rect fill="#E2E4DE" height="42" stroke="#CBD0C7" stroke-width="0.8" width="65" x="0" y="8"></rect>
+<rect fill="#E2E4DE" height="42" stroke="#CBD0C7" stroke-width="0.8" width="65" x="235" y="8"></rect>
+<!-- Railway Bridge Girder -->
+<rect fill="#717882" height="15" rx="1.5" width="190" x="55" y="10"></rect>
+<line stroke="#4B5563" stroke-dasharray="4,2" stroke-width="1" x1="60" x2="240" y1="25" y2="25"></line>
+<text fill="#FFFFFF" font-family="Inter" font-size="6.8" font-weight="600" letter-spacing="0.05em" text-anchor="middle" x="150" y="20.5">
+            RAILWAY BRIDGE GIRDER (CLEARANCE 4.8m)
+          </text>
+<!-- Underpass Dip Profile -->
+<path d="M 0 55 L 65 55 L 110 98 L 190 98 L 235 55 L 300 55 L 300 115 L 0 115 Z" fill="#EEF0EA" stroke="#CBD0C7" stroke-width="1.2"></path>
+<!-- Water Body in Dip (Clamped to storage depth >8 in) -->
+<path d="M 98 87 L 202 87 L 190 98 L 110 98 Z" fill="#3B82F6" fill-opacity="0.25" id="water-polygon" stroke="#2563EB" stroke-width="1"></path>
+<path d="M 98 87 L 202 87" fill="none" id="water-surface-line" stroke="#2563EB" stroke-width="1.5"></path>
+<!-- Alert Level Line: 6 in (15 cm) -->
+<line stroke="#D97706" stroke-dasharray="3,3" stroke-width="1.2" x1="72" x2="228" y1="92" y2="92"></line>
+<text fill="#D97706" font-family="JetBrains Mono" font-size="6.8" font-weight="600" text-anchor="end" x="70" y="90">Alert 6 in (15 cm)</text>
+<!-- Closure Level Line: 8 in (20 cm) -->
+<line stroke="#DC2626" stroke-dasharray="3,3" stroke-width="1.2" x1="72" x2="228" y1="88" y2="88"></line>
+<text fill="#DC2626" font-family="JetBrains Mono" font-size="6.8" font-weight="600" id="closure-label-text" x="230" y="86">Closure 8 in (20 cm) [&gt;8 in]</text>
+<!-- Culvert Choke Node -->
+<line stroke="#1F2937" stroke-width="3" x1="145" x2="155" y1="98" y2="98"></line>
+<text fill="#6B7280" font-family="Inter" font-size="6.5" text-anchor="middle" x="150" y="108">Sump Grate #3 (90% choked)</text>
+</svg>
+</div>
+<!-- Three Metrics Strip -->
+<div class="grid grid-cols-3 gap-2 bg-civic-subtle/80 p-2.5 rounded-lg border border-civic-border text-center">
+<div class="flex flex-col">
+<span class="text-[10px] text-civic-textMuted uppercase font-medium">Time to alert</span>
+<span class="font-mono text-[14px] font-semibold text-rose-600 mt-0.5" id="metric-alert">0 min</span>
+</div>
+<div class="flex flex-col border-x border-civic-border px-1">
+<span class="text-[10px] text-civic-textMuted uppercase font-medium">Time to closure</span>
+<span class="font-mono text-[14px] font-semibold text-rose-600 mt-0.5" id="metric-closure">12 min</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-civic-textMuted uppercase font-medium">Closure duration</span>
+<span class="font-mono text-[14px] font-semibold text-civic-text mt-0.5" id="metric-duration">3.8 hrs</span>
+</div>
+</div>
+</div>
+<!-- SEGMENTED TABS: Interventions | Recommend (Active) | Explain -->
+<div class="bg-civic-subtle p-1 rounded-xl border border-civic-border grid grid-cols-3">
+<button class="py-1 text-center text-[12px] text-civic-textMuted hover:text-civic-text font-medium rounded-lg transition-colors" type="button">
+        Interventions
+      </button>
+<button class="py-1 text-center text-[12px] bg-white text-brand-900 font-semibold border border-civic-border shadow-calm rounded-lg" type="button">
+        Recommend
+      </button>
+<button class="py-1 text-center text-[12px] text-civic-textMuted hover:text-civic-text font-medium rounded-lg transition-colors" type="button">
+        Explain
+      </button>
+</div>
+<!-- CARD 2: Field Resource Allocation Steppers -->
+<div class="bg-civic-card border border-civic-border rounded-xl p-3.5 shadow-calm">
+<div class="flex items-center justify-between mb-2.5 pb-1.5 border-b border-civic-border">
+<span class="text-[10px] uppercase tracking-wider font-semibold text-civic-textFaint">AVAILABLE FIELD DISPATCH</span>
+<span class="font-mono text-[11px] text-civic-textMuted">READY AT DEPOTS</span>
+</div>
+<div class="grid grid-cols-2 gap-3 mb-3">
+<!-- Mobile Pumps Stepper -->
+<div class="bg-civic-subtle/60 border border-civic-border rounded-lg p-2.5">
+<div class="flex items-center justify-between text-[11.5px] text-civic-textMuted mb-1.5">
+<span class="font-medium">Mobile pumps</span>
+<span class="font-mono text-[11px] text-civic-text font-medium" id="pumps-ratio-text">5 / 12 total</span>
+</div>
+<div class="flex items-center justify-between">
+<button class="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-civic-border hover:bg-civic-subtle text-civic-text shadow-sm transition-colors" id="pumps-dec" type="button">
+<span class="material-symbols-outlined text-[14px]">remove</span>
+</button>
+<span class="font-mono text-[18px] font-semibold text-civic-text" id="pumps-val">5</span>
+<button class="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-civic-border hover:bg-civic-subtle text-civic-text shadow-sm transition-colors" id="pumps-inc" type="button">
+<span class="material-symbols-outlined text-[14px]">add</span>
+</button>
+</div>
+</div>
+<!-- Crews Stepper -->
+<div class="bg-civic-subtle/60 border border-civic-border rounded-lg p-2.5">
+<div class="flex items-center justify-between text-[11.5px] text-civic-textMuted mb-1.5">
+<span class="font-medium">Crews</span>
+<span class="font-mono text-[11px] text-civic-text font-medium" id="crews-ratio-text">2 / 8 total</span>
+</div>
+<div class="flex items-center justify-between">
+<button class="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-civic-border hover:bg-civic-subtle text-civic-text shadow-sm transition-colors" id="crews-dec" type="button">
+<span class="material-symbols-outlined text-[14px]">remove</span>
+</button>
+<span class="font-mono text-[18px] font-semibold text-civic-text" id="crews-val">2</span>
+<button class="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-civic-border hover:bg-civic-subtle text-civic-text shadow-sm transition-colors" id="crews-inc" type="button">
+<span class="material-symbols-outlined text-[14px]">add</span>
+</button>
+</div>
+</div>
+</div>
+<button class="w-full h-8 bg-brand-900 hover:bg-brand-800 text-white text-[12.5px] font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-sm" id="btn-find-best" type="button">
+<span class="material-symbols-outlined text-[15px]">bolt</span>
+<span>Find best allocation</span>
+</button>
+</div>
+<!-- CARD 3: Simulated Outcome & Confidence -->
+<div class="bg-civic-card border border-civic-border rounded-xl p-3.5 shadow-calm">
+<div class="flex items-baseline justify-between">
+<span class="text-[13px] text-civic-textMuted font-medium">Closure-hours saved:</span>
+<div class="flex items-baseline gap-1">
+<span class="font-mono text-[22px] font-bold text-brand-900" id="res-hours-saved">6.4</span>
+<span class="text-[12px] text-civic-textMuted">hrs</span>
+</div>
+</div>
+<div class="text-[11.5px] text-civic-textMuted mt-0.5">
+        vs equal split <span class="font-mono text-civic-text font-semibold" id="res-p10-p90">(P10–P90: 5.1 to 7.6 hrs)</span>
+</div>
+<div class="mt-2.5 pt-2 border-t border-civic-border flex items-center justify-between">
+<span class="text-[12px] text-civic-textMuted">Impact index reduced:</span>
+<span class="font-mono text-[13px] font-semibold text-civic-text" id="res-impact-reduced">63% (relative)</span>
+</div>
+<p class="text-[11px] text-civic-textMuted mt-2 pt-2 border-t border-civic-border">
+        Same top-3 allocation in 86% of 200 simulations.
+      </p>
+</div>
+<!-- CARD 4: Recommended Allocation Table (Plain text, no HP labels) -->
+<div class="bg-civic-card border border-civic-border rounded-xl shadow-calm overflow-hidden">
+<table class="w-full text-left border-collapse text-[12.5px]">
+<thead>
+<tr class="bg-civic-subtle/80 border-b border-civic-border text-civic-textFaint text-[10px] uppercase">
+<th class="py-2 px-3 font-semibold">HOTSPOT</th>
+<th class="py-2 px-3 font-semibold text-right">PUMPS</th>
+<th class="py-2 px-3 font-semibold text-right">DRAIN CLEARED</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-civic-border/70 text-civic-text">
+<tr class="hover:bg-civic-subtle/40 transition-colors">
+<td class="py-2 px-3 font-medium">Minto Bridge</td>
+<td class="py-2 px-3 font-mono text-[12px] text-right" id="tbl-minto-pumps">2 pumps</td>
+<td class="py-2 px-3 text-right">
+<span>Yes</span>
+<span class="text-civic-textMuted text-[10.5px] ml-1">(Inlet grate 3)</span>
+</td>
+</tr>
+<tr class="hover:bg-civic-subtle/40 transition-colors">
+<td class="py-2 px-3 font-medium">ITO Underpass</td>
+<td class="py-2 px-3 font-mono text-[12px] text-right" id="tbl-ito-pumps">1 pump</td>
+<td class="py-2 px-3 text-right">
+<span>Yes</span>
+<span class="text-civic-textMuted text-[10.5px] ml-1">(Culvert)</span>
+</td>
+</tr>
+<tr class="hover:bg-civic-subtle/40 transition-colors">
+<td class="py-2 px-3 font-medium">Tilak Bridge</td>
+<td class="py-2 px-3 font-mono text-[12px] text-right" id="tbl-tilak-pumps">1 pump</td>
+<td class="py-2 px-3 text-right text-civic-textMuted">
+<span>No</span>
+</td>
+</tr>
+<tr class="hover:bg-civic-subtle/40 transition-colors">
+<td class="py-2 px-3 font-medium">Pul Prahladpur</td>
+<td class="py-2 px-3 font-mono text-[12px] text-right" id="tbl-prahlad-pumps">1 pump</td>
+<td class="py-2 px-3 text-right text-civic-textMuted">
+<span>No</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- CARD 5: Equal Split vs NIRNAY Plan Bar Comparison -->
+<div class="bg-civic-card border border-civic-border rounded-xl p-3.5 shadow-calm mb-2">
+<div class="flex items-center justify-between mb-2">
+<span class="text-[10px] uppercase tracking-wider font-semibold text-civic-textFaint">TOTAL CUMULATIVE CLOSURE-HOURS</span>
+<span class="font-mono text-[10px] text-civic-textMuted">LOWER IS BETTER</span>
+</div>
+<div class="mb-2">
+<div class="flex items-center justify-between text-[11.5px] mb-1">
+<span class="text-civic-textMuted">Equal split baseline</span>
+<span class="font-mono text-[11.5px] font-semibold text-civic-text" id="bar-equal-text">18.2 closure-hrs</span>
+</div>
+<div class="w-full h-2.5 bg-civic-subtle rounded-full overflow-hidden">
+<div class="h-full bg-civic-textMuted/60 rounded-full" style="width: 100%;"></div>
+</div>
+</div>
+<div>
+<div class="flex items-center justify-between text-[11.5px] mb-1">
+<span class="font-semibold text-brand-900">NIRNAY plan</span>
+<span class="font-mono text-[11.5px] font-bold text-brand-900">
+<span id="bar-nirnay-text">11.8 closure-hrs</span>
+<span class="text-civic-textMuted font-normal font-sans ml-1" id="bar-diff-text">(-6.4 hrs)</span>
+</span>
+</div>
+<div class="w-full h-2.5 bg-civic-subtle rounded-full overflow-hidden">
+<div class="h-full bg-brand-900 rounded-full transition-all duration-300" id="bar-nirnay-fill" style="width: 64.8%;"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- BOTTOM BAR: Rainfall Scenario Controller (Clean Two Rows) -->
+<div class="bg-white border-t border-civic-border px-6 py-2.5 flex flex-col gap-2 shrink-0 z-30 shadow-calm">
+<!-- Row 1: Total Rainfall Slider + IMD Class Ticks -->
+<div class="flex items-center justify-between gap-6">
+<div class="flex items-center gap-2 min-w-[210px]">
+<div class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center text-brand-900">
+<span class="material-symbols-outlined text-[17px]">water_drop</span>
+</div>
+<span class="text-[12px] font-semibold text-civic-text uppercase tracking-tight">TOTAL RAINFALL:</span>
+<span class="font-mono text-[15px] font-bold text-brand-900" id="rainfall-val-display">128.0 mm</span>
+</div>
+<div class="flex-1 max-w-3xl flex flex-col">
+<!-- Range Track with IMD bands -->
+<div class="relative w-full flex flex-col justify-center my-1">
+<div class="h-2 w-full bg-civic-subtle rounded-full overflow-hidden flex border border-civic-border/60">
+<div class="w-[22.7%] bg-sky-200" title="Moderate"></div>
+<div class="w-[21.2%] bg-sky-400" title="Heavy 64.5–115.5"></div>
+<div class="w-[37.0%] bg-blue-600" title="Very Heavy 115.6–204.4"></div>
+<div class="w-[19.1%] bg-brand-900" title="Extremely Heavy &gt;204.4"></div>
+</div>
+<input class="absolute -top-1 w-full h-4 opacity-0 cursor-pointer z-10" id="rainfall-slider" max="250" min="10" step="0.5" type="range" value="128"/>
+<!-- Active Slider Thumb Indicator -->
+<div class="absolute left-[49.1%] -translate-x-1/2 w-4 h-4 bg-brand-900 border-2 border-white rounded-full shadow-md pointer-events-none z-0 transition-all duration-75" id="slider-thumb"></div>
+</div>
+<!-- IMD Tick Labels -->
+<div class="flex justify-between text-[10.5px] font-mono text-civic-textMuted">
+<span id="imd-tag-1">&lt;64.5 Moderate</span>
+<span id="imd-tag-2">Heavy 64.5–115.5</span>
+<span class="font-semibold text-brand-900 bg-brand-50 px-1 rounded" id="imd-tag-3">Very heavy 115.6–204.4 [Active]</span>
+<span id="imd-tag-4">Extremely heavy &gt;204.4</span>
+</div>
+</div>
+<div class="min-w-[120px] text-right font-mono text-[11px] text-civic-textFaint">
+      Range: 10 — 250 mm
+    </div>
+</div>
+<!-- Row 2: Duration Selector and Historical Replays (NO simulation runtime / nominal status) -->
+<div class="flex items-center justify-between pt-1.5 border-t border-civic-border/70 text-[12px]">
+<div class="flex items-center gap-4">
+<!-- Duration Selector -->
+<div class="flex items-center gap-2">
+<span class="text-civic-textMuted font-medium uppercase text-[11px]">DURATION:</span>
+<select class="h-7 px-2 font-mono text-[11.5px] bg-white border border-civic-border rounded-lg text-civic-text focus:outline-none focus:border-brand-900 shadow-calm" id="duration-select">
+<option selected="" value="3.0">3.0 hrs (Peak 42 mm/h)</option>
+<option value="1.5">1.5 hrs (Flash peak)</option>
+<option value="6.0">6.0 hrs (Continuous)</option>
+</select>
+</div>
+<div class="h-3 w-[1px] bg-civic-border"></div>
+<!-- Historical Presets -->
+<div class="flex items-center gap-2">
+<span class="text-civic-textMuted font-medium uppercase text-[11px]">HISTORICAL PRESETS:</span>
+<div class="flex items-center gap-1.5">
+<button class="h-7 px-2.5 bg-white hover:bg-civic-subtle border border-civic-border rounded-lg text-[11.5px] text-civic-text font-medium shadow-calm transition-colors" id="preset-july" type="button">
+            July 2026 replay
+          </button>
+<button class="h-7 px-2.5 bg-white hover:bg-civic-subtle border border-civic-border rounded-lg text-[11.5px] text-civic-text font-medium shadow-calm transition-colors" id="preset-may" type="button">
+            May 2025 replay
+          </button>
+</div>
+</div>
+</div>
+<div></div>
+</div>
+</div>
+<!-- FOOTER: Operational Civic Advisory Only -->
+<footer class="h-6 bg-civic-bg border-t border-civic-border px-6 flex items-center justify-start text-[11px] text-civic-textMuted shrink-0">
+<div class="flex items-center gap-2">
+<span>Decision support, not flood forecasting. Impact figures are a relative index, not counts of people or vehicles.</span>
+</div>
+</footer>
+<!-- SIMULATION & LEAFLET LOGIC -->
+<script>
+  // Hotspots dataset model
+  const hotspotsData = [
+    { id: 'minto', name: 'Minto Bridge', lat: 28.6331, lng: 77.2228, baseStatus: 'closed', alertTime: 0, closureTime: 12, closureDuration: 3.8, isSelected: true, showPill: true },
+    { id: 'prahladpur', name: 'Pul Prahladpur', lat: 28.5020, lng: 77.2885, baseStatus: 'closed', alertTime: 0, closureTime: 10, closureDuration: 4.2, isSelected: false, showPill: true },
+    { id: 'ito', name: 'ITO Underpass', lat: 28.6289, lng: 77.2410, baseStatus: 'alert', alertTime: 14, closureTime: 42, closureDuration: 2.1, isSelected: false, showPill: false },
+    { id: 'zakhira', name: 'Zakhira Underpass', lat: 28.6672, lng: 77.1610, baseStatus: 'alert', alertTime: 45, closureTime: 70, closureDuration: 1.5, isSelected: false, showPill: false },
+    { id: 'tilak', name: 'Tilak Bridge', lat: 28.6235, lng: 77.2380, baseStatus: 'alert', alertTime: 28, closureTime: 55, closureDuration: 1.8, isSelected: false, showPill: false },
+    { id: 'azadpur', name: 'Azadpur Underpass', lat: 28.7070, lng: 77.1750, baseStatus: 'alert', alertTime: 55, closureTime: 90, closureDuration: 1.2, isSelected: false, showPill: false },
+    { id: 'bhairon', name: 'Bhairon Marg', lat: 28.6160, lng: 77.2480, baseStatus: 'alert', alertTime: 18, closureTime: 48, closureDuration: 2.0, isSelected: false, showPill: false },
+    { id: 'aiims', name: 'AIIMS Corridor', lat: 28.5672, lng: 77.2100, baseStatus: 'clear', alertTime: 95, closureTime: 180, closureDuration: 0, isSelected: false, showPill: false },
+    { id: 'dhaula', name: 'Dhaula Kuan', lat: 28.5921, lng: 77.1585, baseStatus: 'clear', alertTime: 110, closureTime: 210, closureDuration: 0, isSelected: false, showPill: false },
+    { id: 'kashmere', name: 'Kashmere Gate', lat: 28.6665, lng: 77.2285, baseStatus: 'clear', alertTime: 85, closureTime: 160, closureDuration: 0, isSelected: false, showPill: false },
+    { id: 'sarai', name: 'Sarai Kale Khan', lat: 28.5900, lng: 77.2550, baseStatus: 'clear', alertTime: 120, closureTime: 240, closureDuration: 0, isSelected: false, showPill: false },
+    { id: 'barapullah', name: 'Barapullah Outfall', lat: 28.5830, lng: 77.2340, baseStatus: 'clear', alertTime: 90, closureTime: 180, closureDuration: 0, isSelected: false, showPill: false },
+  ];
+
+  // Hospital corridor route (LNJP to AIIMS via Connaught Place)
+  const hospitalRouteCoords = [
+    [28.6360, 77.2405], // LNJP
+    [28.6335, 77.2315],
+    [28.6315, 77.2205], // Connaught Place inner/outer
+    [28.6250, 77.2155],
+    [28.6100, 77.2095],
+    [28.5900, 77.2090],
+    [28.5672, 77.2100]  // AIIMS
+  ];
+
+  // State
+  let state = {
+    rainfall: 128.0,
+    duration: 3.0,
+    pumps: 5,
+    crews: 2,
+    selectedHotspot: 'minto'
+  };
+
+  // Initialize Map
+  const map = L.map('leaflet-map', {
+    zoomControl: false,
+    attributionControl: false
+  }).setView([28.6139, 77.2090], 11.5);
+
+  // Add zoom control top right
+  L.control.zoom({ position: 'topright' }).addTo(map);
+
+  // Add Carto Light tiles
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(map);
+
+  // Add Hospital Route Polyline (#1d4ed8)
+  const routePolyline = L.polyline(hospitalRouteCoords, {
+    color: '#1d4ed8',
+    weight: 4,
+    opacity: 0.9,
+    lineCap: 'round',
+    lineJoin: 'round'
+  }).addTo(map);
+
+  // Marker layer collection
+  let markerGroup = L.layerGroup().addTo(map);
+
+  function getMarkerIcon(spot, status) {
+    let colorClass = status === 'closed' ? 'bg-rose-600' : (status === 'alert' ? 'bg-amber-500' : 'bg-emerald-500');
+    
+    if (spot.id === 'minto') {
+      return L.divIcon({
+        className: 'custom-map-marker',
+        html: `
+          <div class="hotspot-label-selected">
+            <span class="w-2.5 h-2.5 rounded-full ${colorClass} ring-2 ring-white"></span>
+            <span class="text-[11.5px] font-semibold text-civic-text">Minto Bridge</span>
+            <span class="text-[10px] bg-rose-50 text-rose-700 font-medium px-1.5 py-0.2 rounded-full font-mono">${status === 'closed' ? 'Closed' : (status === 'alert' ? 'Alert' : 'Clear')}</span>
+          </div>
+        `,
+        iconSize: [120, 26],
+        iconAnchor: [60, 13]
+      });
+    } else if (spot.id === 'prahladpur' && status === 'closed') {
+      return L.divIcon({
+        className: 'custom-map-marker',
+        html: `
+          <div class="hotspot-label-closed">
+            <span class="w-2.5 h-2.5 rounded-full ${colorClass} ring-2 ring-white"></span>
+            <span class="text-[11px] font-medium text-civic-text">Pul Prahladpur</span>
+            <span class="text-[9.5px] bg-rose-50 text-rose-700 font-medium px-1 py-0.2 rounded font-mono">Closed</span>
+          </div>
+        `,
+        iconSize: [110, 24],
+        iconAnchor: [55, 12]
+      });
+    } else {
+      // Just clean status dot with white ring
+      return L.divIcon({
+        className: 'custom-dot-marker',
+        html: `
+          <div class="w-3.5 h-3.5 rounded-full ${colorClass} ring-2 ring-white shadow-sm hover:scale-125 transition-transform"></div>
+        `,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      });
+    }
+  }
+
+  function renderMapMarkers() {
+    markerGroup.clearLayers();
+    
+    // Rational calculation for statuses depending on rainfall and pumps
+    hotspotsData.forEach(spot => {
+      let status = spot.baseStatus;
+      
+      // Calculate dynamic shift based on rainfall
+      if (state.rainfall < 70) {
+        if (spot.id !== 'minto') status = 'clear';
+        else status = 'alert';
+      } else if (state.rainfall > 180) {
+        if (status === 'alert') status = 'closed';
+      }
+
+      // Mitigation effect from pumps at minto
+      if (spot.id === 'minto' && state.pumps >= 8 && state.rainfall <= 135) {
+        status = 'alert';
+      }
+
+      const marker = L.marker([spot.lat, spot.lng], {
+        icon: getMarkerIcon(spot, status)
+      });
+      
+      marker.on('click', () => {
+        state.selectedHotspot = spot.id;
+        document.getElementById('cs-hotspot-title').textContent = spot.name + (spot.name.includes('underpass') ? '' : ' underpass');
+        recalculate();
+      });
+
+      markerGroup.addLayer(marker);
+    });
+  }
+
+  // Simulator Model: Rational Method + Storage Balance
+  function recalculate() {
+    const rf = state.rainfall;
+    const pumps = state.pumps;
+    const crews = state.crews;
+    const dur = state.duration;
+
+    // Intensity: mm/hr
+    const intensity = rf / dur;
+    
+    // Baseline equal split closure hours
+    const equalBaseline = +( (rf / 128) * 18.2 * (3 / dur) ).toFixed(1);
+    
+    // Savings calculation modeled on field dispatch pumps & crews
+    const pumpFactor = (pumps / 5) * 0.65 + (crews / 2) * 0.35;
+    const baseSaved = 6.4 * (rf / 128) * pumpFactor;
+    const savedHours = +Math.max(1.2, Math.min(equalBaseline - 1.5, baseSaved)).toFixed(1);
+    
+    const nirnayPlan = +(equalBaseline - savedHours).toFixed(1);
+    const relativeImpactPct = Math.round((savedHours / equalBaseline) * 100);
+
+    // Minto Bridge Specific metrics
+    const mintoClosureDur = +(Math.max(0.5, (3.8 * (rf / 128) - (pumps - 5) * 0.35))).toFixed(1);
+    const mintoAlertTime = rf > 100 ? 0 : Math.round(15 * (100 - rf) / 50);
+    const mintoClosureTime = rf > 140 ? 8 : (rf > 110 ? 12 : 25);
+
+    // Update UI elements
+    document.getElementById('rainfall-val-display').textContent = rf.toFixed(1) + ' mm';
+    
+    // Slider thumb position (10 - 250 mm)
+    const pct = ((rf - 10) / (250 - 10)) * 100;
+    document.getElementById('slider-thumb').style.left = pct + '%';
+
+    // IMD Active Tag
+    ['imd-tag-1', 'imd-tag-2', 'imd-tag-3', 'imd-tag-4'].forEach(id => {
+      const el = document.getElementById(id);
+      el.className = 'text-civic-textMuted';
+    });
+    if (rf < 64.5) {
+      document.getElementById('imd-tag-1').className = 'font-semibold text-brand-900 bg-brand-50 px-1 rounded';
+    } else if (rf <= 115.5) {
+      document.getElementById('imd-tag-2').className = 'font-semibold text-brand-900 bg-brand-50 px-1 rounded';
+    } else if (rf <= 204.4) {
+      document.getElementById('imd-tag-3').className = 'font-semibold text-brand-900 bg-brand-50 px-1 rounded';
+    } else {
+      document.getElementById('imd-tag-4').className = 'font-semibold text-brand-900 bg-brand-50 px-1 rounded';
+    }
+
+    // Results card
+    document.getElementById('res-hours-saved').textContent = savedHours.toFixed(1);
+    const p10 = (savedHours * 0.8).toFixed(1);
+    const p90 = (savedHours * 1.18).toFixed(1);
+    document.getElementById('res-p10-p90').textContent = `(P10–P90: ${p10} to ${p90} hrs)`;
+    document.getElementById('res-impact-reduced').textContent = `${relativeImpactPct}% (relative)`;
+
+    // Bar comparison
+    document.getElementById('bar-equal-text').textContent = `${equalBaseline} closure-hrs`;
+    document.getElementById('bar-nirnay-text').textContent = `${nirnayPlan} closure-hrs`;
+    document.getElementById('bar-diff-text').textContent = `(-${savedHours} hrs)`;
+    const barFillPct = Math.min(100, Math.max(10, (nirnayPlan / equalBaseline) * 100));
+    document.getElementById('bar-nirnay-fill').style.width = barFillPct + '%';
+
+    // Metrics strip
+    document.getElementById('metric-alert').textContent = `${mintoAlertTime} min`;
+    document.getElementById('metric-closure').textContent = `${mintoClosureTime} min`;
+    document.getElementById('metric-duration').textContent = `${mintoClosureDur} hrs`;
+
+    // Dynamic table distribution
+    const mintoP = Math.max(1, Math.min(5, Math.round(pumps * 0.4)));
+    const itoP = Math.max(1, Math.round(pumps * 0.2));
+    const tilakP = Math.max(0, Math.round(pumps * 0.2));
+    const prahladP = Math.max(0, pumps - (mintoP + itoP + tilakP));
+    document.getElementById('tbl-minto-pumps').textContent = `${mintoP} pump${mintoP > 1 ? 's' : ''}`;
+    document.getElementById('tbl-ito-pumps').textContent = `${itoP} pump${itoP > 1 ? 's' : ''}`;
+    document.getElementById('tbl-tilak-pumps').textContent = `${tilakP} pump${tilakP > 1 ? 's' : ''}`;
+    document.getElementById('tbl-prahlad-pumps').textContent = `${prahladP} pump${prahladP > 1 ? 's' : ''}`;
+
+    renderMapMarkers();
+  }
+
+  // Event Listeners for controls
+  const slider = document.getElementById('rainfall-slider');
+  slider.addEventListener('input', (e) => {
+    state.rainfall = parseFloat(e.target.value);
+    recalculate();
+  });
+
+  document.getElementById('duration-select').addEventListener('change', (e) => {
+    state.duration = parseFloat(e.target.value);
+    recalculate();
+  });
+
+  // Steppers: Pumps
+  document.getElementById('pumps-dec').addEventListener('click', () => {
+    if (state.pumps > 1) {
+      state.pumps--;
+      document.getElementById('pumps-val').textContent = state.pumps;
+      document.getElementById('pumps-ratio-text').textContent = `${state.pumps} / 12 total`;
+      recalculate();
+    }
+  });
+  document.getElementById('pumps-inc').addEventListener('click', () => {
+    if (state.pumps < 12) {
+      state.pumps++;
+      document.getElementById('pumps-val').textContent = state.pumps;
+      document.getElementById('pumps-ratio-text').textContent = `${state.pumps} / 12 total`;
+      recalculate();
+    }
+  });
+
+  // Steppers: Crews
+  document.getElementById('crews-dec').addEventListener('click', () => {
+    if (state.crews > 1) {
+      state.crews--;
+      document.getElementById('crews-val').textContent = state.crews;
+      document.getElementById('crews-ratio-text').textContent = `${state.crews} / 8 total`;
+      recalculate();
+    }
+  });
+  document.getElementById('crews-inc').addEventListener('click', () => {
+    if (state.crews < 8) {
+      state.crews++;
+      document.getElementById('crews-val').textContent = state.crews;
+      document.getElementById('crews-ratio-text').textContent = `${state.crews} / 8 total`;
+      recalculate();
+    }
+  });
+
+  // Primary action button
+  document.getElementById('btn-find-best').addEventListener('click', () => {
+    state.pumps = 6;
+    state.crews = 3;
+    document.getElementById('pumps-val').textContent = state.pumps;
+    document.getElementById('pumps-ratio-text').textContent = `${state.pumps} / 12 total`;
+    document.getElementById('crews-val').textContent = state.crews;
+    document.getElementById('crews-ratio-text').textContent = `${state.crews} / 8 total`;
+    recalculate();
+  });
+
+  // Presets
+  document.getElementById('preset-july').addEventListener('click', () => {
+    state.rainfall = 154.0;
+    slider.value = 154.0;
+    recalculate();
+  });
+  document.getElementById('preset-may').addEventListener('click', () => {
+    state.rainfall = 88.5;
+    slider.value = 88.5;
+    recalculate();
+  });
+
+  // Initial render
+  recalculate();
+</script>
+</body></html>
