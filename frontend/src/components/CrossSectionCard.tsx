@@ -55,8 +55,8 @@ export const CrossSectionCard: React.FC<CrossSectionCardProps> = ({
     : `${(clampedDepth * 100).toFixed(0)} cm (${depthInches.toFixed(1)} in)`;
 
   // Timings format
-  const formatTime = (mins: number) => {
-    if (!isFinite(mins) || mins === Infinity) return '--';
+  const formatTime = (mins: number | null) => {
+    if (mins == null || !isFinite(mins) || mins === Infinity) return '--';
     if (mins < 60) return `${mins} min`;
     return `${(mins / 60).toFixed(1)} hrs`;
   };

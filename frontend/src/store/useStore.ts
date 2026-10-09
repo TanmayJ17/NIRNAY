@@ -4,9 +4,7 @@ import { simulate } from '@/engine/simulator';
 import { askNirnay } from '@/api/chat';
 import { DEFAULT_RAIN_MM, DEFAULT_DURATION_H, DEFAULT_AVAILABLE_PUMPS, DEFAULT_AVAILABLE_CREWS, ALERT_THRESHOLD_M, CLOSURE_THRESHOLD_M } from '@/config';
 import type { PinStatus } from '@/types';
-import hotspotData from '@/data/hotspots.json';
-
-const hotspots: Hotspot[] = hotspotData.hotspots as Hotspot[];
+import { hotspots } from '@/data/loadHotspots';
 
 /** Default interventions (nothing deployed) */
 const defaultInterventions = (): Interventions => ({
@@ -67,7 +65,7 @@ export interface StoreState {
 /** Compute pin status from a simulation result */
 export function getPinStatus(result: SimulationResult): PinStatus {
   if (result.closureMinutes > 0) return 'red';
-  if (result.minutesToAlert < Infinity && result.maxDepthM >= ALERT_THRESHOLD_M) return 'amber';
+  if (result.minutesToAlert != null && result.maxDepthM >= ALERT_THRESHOLD_M) return 'amber';
   return 'green';
 }
 
@@ -183,8 +181,8 @@ export const useStore = create<StoreState>((set, get) => {
         const nextClose = nextSim.minutesToClosure;
 
         if (prevClose !== nextClose) {
-          const formatClose = (mins: number) => {
-            if (!isFinite(mins) || mins === Infinity) return '--';
+          const formatClose = (mins: number | null) => {
+            if (mins == null || !isFinite(mins) || mins === Infinity) return '--';
             return `${mins} min`;
           };
           const deltaStr = `${formatClose(prevClose)} -> ${formatClose(nextClose)}`;

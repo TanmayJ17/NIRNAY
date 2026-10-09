@@ -32,8 +32,8 @@ export interface Interventions {
 
 /** Result of running the simulation for one hotspot */
 export interface SimulationResult {
-  minutesToAlert: number;
-  minutesToClosure: number;
+  minutesToAlert: number | null;
+  minutesToClosure: number | null;
   closureMinutes: number;
   maxDepthM: number;
   impactIndex: number;
@@ -81,5 +81,7 @@ export interface ChatMessage {
 
 /** Hotspot data file shape */
 export interface HotspotData {
+  data_status?: string;
+  demo_note?: string;
   hotspots: Hotspot[];
 }

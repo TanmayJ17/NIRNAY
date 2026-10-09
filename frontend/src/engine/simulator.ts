@@ -1,139 +1,167 @@
 /**
- * =========================================================================
- * TEMPORARY STUB — simulator.ts
+ * NIRNAY client-side hydrology engine.
  *
- * This is a placeholder hydrological simulation stub for NIRNAY.
- * Author: Frontend Team (Temporary)
- * Note: Member 1 / Team will replace this file with the real Python port.
- * =========================================================================
+ * Deterministic water-balance simulator. All physical thresholds, pump
+ * capacities, and impact weights are read from config — nothing is hardcoded
+ * here except the Rational Method coefficient 0.278 (unit conversion).
  */
 
 import type { Hotspot, Interventions, SimulationResult } from '@/types';
-import { ALERT_THRESHOLD_M, CLOSURE_THRESHOLD_M } from '@/config';
+import {
+  ALERT_DEPTH_M,
+  CLOSURE_DEPTH_M,
+  DETOUR_PENALTY_WEIGHT,
+  DRAIN_CLEARED_RECOVERY_FACTOR,
+  EULER_STEP_SECONDS,
+  HOSPITAL_ROUTE_WEIGHT,
+  HYETOGRAPH_PEAK_FRACTION,
+  MAX_SIMULATION_HOURS,
+  POPULATION_WEIGHT,
+  PRE_DIVERT_DETOUR_PENALTY_MINS,
+  PRE_DIVERT_EXPOSURE_FACTOR,
+  ROAD_CLOSED_DETOUR_PENALTY_MINS,
+  ROAD_CLOSED_EXPOSURE_FACTOR,
+  TEMP_PUMP_CAPACITY_M3S,
+} from '@/config';
+
+/** Unit conversion for the Rational Method: Q (m³/s) = 0.278 · C · i (mm/h) · A (km²) */
+const RATIONAL_METHOD_COEFF = 0.278;
+
+export interface SimulateParams {
+  /** Override runoff coefficient C (Monte Carlo) */
+  runoffCoeff?: number;
+  /** Override temporary pump capacity per pump, m³/s (Monte Carlo) */
+  tempPumpCapacityM3s?: number;
+  /** Override gravity drain capacity, m³/s (Monte Carlo) */
+  gravityDrainCapacityM3s?: number;
+  /** Override permanent pump capacity, m³/s (Monte Carlo) */
+  permanentPumpCapacityM3s?: number;
+}
+
+function triangularIntensityMmh(
+  tSec: number,
+  rainMm: number,
+  durationH: number,
+  peakFraction: number
+): number {
+  if (rainMm <= 0 || durationH <= 0) return 0;
+
+  const durationSec = durationH * 3600;
+  if (tSec < 0 || tSec > durationSec) return 0;
+
+  const iPeak = (2 * rainMm) / durationH;
+  const tPeakSec = peakFraction * durationSec;
+
+  if (tSec <= tPeakSec) {
+    if (tPeakSec <= 0) return iPeak;
+    return iPeak * (tSec / tPeakSec);
+  }
+
+  const falling = durationSec - tPeakSec;
+  if (falling <= 0) return 0;
+  return iPeak * ((durationSec - tSec) / falling);
+}
+
+function impactIndex(
+  hotspot: Hotspot,
+  interventions: Interventions,
+  closureMinutes: number
+): number {
+  const closureHours = closureMinutes / 60;
+  if (closureHours <= 0) return 0;
+
+  let exposurePcu = hotspot.traffic_pcu_per_hour;
+  if (interventions.preDivert) exposurePcu *= PRE_DIVERT_EXPOSURE_FACTOR;
+  if (interventions.roadClosed) exposurePcu *= ROAD_CLOSED_EXPOSURE_FACTOR;
+
+  let detourMins = hotspot.detour_penalty_mins;
+  if (interventions.preDivert) detourMins += PRE_DIVERT_DETOUR_PENALTY_MINS;
+  if (interventions.roadClosed) detourMins += ROAD_CLOSED_DETOUR_PENALTY_MINS;
+
+  const hospitalMult = hotspot.hospital_route ? HOSPITAL_ROUTE_WEIGHT : 1;
+
+  const trafficTerm =
+    closureHours *
+    exposurePcu *
+    (1 + DETOUR_PENALTY_WEIGHT * detourMins) *
+    hospitalMult;
+
+  const populationTerm = closureHours * hotspot.population_300m * POPULATION_WEIGHT;
+
+  return trafficTerm + populationTerm;
+}
 
 /**
- * Run hydrology simulation for a single hotspot over a rainfall event.
- *
- * @param hotspot Physical parameters of the underpass
- * @param rainMm Total storm rainfall in millimeters
- * @param durationH Duration of storm in hours
- * @param interventions Deployed operational mitigations
- * @returns SimulationResult with alert/closure timings, duration, depth, and relative impact index
+ * Simulate ponding at a single underpass for a rainfall event.
  */
 export function simulate(
   hotspot: Hotspot,
   rainMm: number,
   durationH: number,
-  interventions: Interventions
+  interventions: Interventions,
+  params?: SimulateParams
 ): SimulationResult {
-  const dtSeconds = 60; // 1-minute time steps
-  const totalSteps = Math.max(1, Math.floor((durationH * 3600) / dtSeconds));
-  const tPeakSec = (durationH * 3600) / 3.0; // Synthetic hyetograph peak at 1/3 duration
+  const dt = EULER_STEP_SECONDS;
+  const maxSteps = Math.floor((MAX_SIMULATION_HOURS * 3600) / dt);
+  const rainSteps = durationH > 0 ? Math.floor((durationH * 3600) / dt) : 0;
 
-  // Triangular hyetograph intensity in mm/h
-  const getRainIntensity = (tSec: number): number => {
-    if (tSec <= tPeakSec) {
-      return ((2.0 * rainMm) / durationH) * (tSec / tPeakSec);
-    } else if (tSec <= durationH * 3600) {
-      return (
-        ((2.0 * rainMm) / durationH) *
-        ((durationH * 3600 - tSec) / (durationH * 3600 - tPeakSec))
-      );
-    }
-    return 0.0;
-  };
+  const C = params?.runoffCoeff ?? hotspot.runoff_coeff_default;
+  const tempPumpCap = params?.tempPumpCapacityM3s ?? TEMP_PUMP_CAPACITY_M3S;
+  const drainCap =
+    params?.gravityDrainCapacityM3s ?? hotspot.gravity_drain_capacity_m3s;
+  const permPumpCap =
+    params?.permanentPumpCapacityM3s ?? hotspot.permanent_pump_capacity_m3s;
 
-  // Interventions impact
-  // Drain clearance restores gravity drain efficiency from 50% to 100%
-  const drainEfficiency = interventions.drainCleared ? 1.0 : 0.50;
-  const qDrain = hotspot.gravity_drain_capacity_m3s * drainEfficiency;
+  const drainMultiplier = interventions.drainCleared
+    ? 1 + DRAIN_CLEARED_RECOVERY_FACTOR
+    : 1;
+  const qOut =
+    permPumpCap +
+    interventions.tempPumps * tempPumpCap +
+    drainCap * drainMultiplier;
 
-  // Permanent pumps operate at standard standby (75%); each temp pump adds 0.15 m3/s
-  const qPumps =
-    hotspot.permanent_pump_capacity_m3s * 0.75 +
-    interventions.tempPumps * 0.15;
+  const areaM2 = Math.max(hotspot.surface_area_m2, 1e-9);
+  const hMaxStorage = hotspot.storage_depth_max_m;
 
-  const qOut = qDrain + qPumps;
-
-  // Pre-divert reduces localized inflow volume entering the sag point
-  const divertMultiplier = interventions.preDivert ? 0.70 : 1.0;
-
-  // Delhi sag catchment fraction: ~5% of upstream basin directly pools into sag bowl
-  const SAG_CATCHMENT_FRACTION = 0.052;
-  const effectiveCatchmentKm2 = hotspot.catchment_km2 * SAG_CATCHMENT_FRACTION;
-
-  let currentDepth = 0.0;
-  let maxDepth = 0.0;
-  let tAlertSec: number | null = null;
-  let tCloseSec: number | null = null;
+  let h = 0;
+  let maxDepthM = 0;
+  let minutesToAlert: number | null = null;
+  let minutesToClosure: number | null = null;
   let closureMinutes = 0;
 
-  for (let step = 0; step < totalSteps; step++) {
-    const tSec = step * dtSeconds;
-    const intensityMmh = getRainIntensity(tSec);
-
-    // Rational method: Q = 0.278 * C * I * A (m3/s)
-    const qIn =
-      0.278 *
-      hotspot.runoff_coeff_default *
-      intensityMmh *
-      effectiveCatchmentKm2 *
-      divertMultiplier;
-
-    // Rate of depth change
-    const deltaHeight =
-      ((qIn - qOut) / hotspot.surface_area_m2) * dtSeconds;
-
-    currentDepth = Math.max(
-      0.0,
-      Math.min(hotspot.storage_depth_max_m, currentDepth + deltaHeight)
+  for (let step = 0; step < maxSteps; step++) {
+    const tSec = step * dt;
+    const intensity = triangularIntensityMmh(
+      tSec,
+      rainMm,
+      durationH,
+      HYETOGRAPH_PEAK_FRACTION
     );
+    const qIn = RATIONAL_METHOD_COEFF * C * intensity * hotspot.catchment_km2;
+    h += ((qIn - qOut) * dt) / areaM2;
+    if (h < 0) h = 0;
+    if (h > hMaxStorage) h = hMaxStorage;
 
-    if (currentDepth > maxDepth) {
-      maxDepth = currentDepth;
+    if (h > maxDepthM) maxDepthM = h;
+
+    const elapsedMin = step + 1;
+    if (minutesToAlert === null && h >= ALERT_DEPTH_M) {
+      minutesToAlert = elapsedMin;
     }
-
-    if (currentDepth >= ALERT_THRESHOLD_M && tAlertSec === null) {
-      tAlertSec = tSec;
-    }
-
-    if (currentDepth >= CLOSURE_THRESHOLD_M) {
-      if (tCloseSec === null) {
-        tCloseSec = tSec;
-      }
+    if (h >= CLOSURE_DEPTH_M) {
+      if (minutesToClosure === null) minutesToClosure = elapsedMin;
       closureMinutes += 1;
     }
+
+    const rainOver = step + 1 >= rainSteps;
+    if (rainOver && h <= 0) break;
   }
-
-  // Timing in minutes
-  const minutesToAlert =
-    tAlertSec !== null ? Math.round(tAlertSec / 60) : Infinity;
-  const minutesToClosure =
-    tCloseSec !== null ? Math.round(tCloseSec / 60) : Infinity;
-
-  // Impact Index calculation (relative score, not count of vehicles or people)
-  let trafficWeight = hotspot.traffic_pcu_per_hour / 3000.0;
-  if (interventions.preDivert) trafficWeight *= 0.4;
-  if (interventions.roadClosed) trafficWeight = 0.08;
-
-  const detourFactor = hotspot.detour_penalty_mins / 20.0;
-  const hospitalMultiplier = hotspot.hospital_route ? 2.5 : 1.0;
-  const popFactor = 1.0 + hotspot.population_300m / 20000.0;
-
-  const rawImpact =
-    closureMinutes *
-    trafficWeight *
-    detourFactor *
-    hospitalMultiplier *
-    popFactor;
-
-  const impactIndex = Math.round(rawImpact);
 
   return {
     minutesToAlert,
     minutesToClosure,
     closureMinutes,
-    maxDepthM: Number(Math.min(maxDepth, hotspot.storage_depth_max_m).toFixed(3)),
-    impactIndex,
+    maxDepthM,
+    impactIndex: impactIndex(hotspot, interventions, closureMinutes),
   };
 }
