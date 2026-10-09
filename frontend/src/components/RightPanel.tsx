@@ -4,6 +4,7 @@ import CrossSectionCard from './CrossSectionCard';
 import DispatchControls from './DispatchControls';
 import RecommendResult from './RecommendResult';
 import AllocationTable from './AllocationTable';
+import AskNirnayPanel from './AskNirnayPanel';
 import { MOCK_RECOMMEND_RESULT } from '@/data/mockRecommend';
 import hotspotData from '@/data/hotspots.json';
 import type { Hotspot } from '@/types';
@@ -11,7 +12,8 @@ import type { Hotspot } from '@/types';
 const hotspotsList: Hotspot[] = hotspotData.hotspots as Hotspot[];
 
 export const RightPanel: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'interventions' | 'recommend' | 'explain'>('recommend');
+  const activeTab = useStore((s) => s.activeTab);
+  const setActiveTab = useStore((s) => s.setActiveTab);
   const [isLoadingDispatch, setIsLoadingDispatch] = useState(false);
 
   const selectedHotspotId = useStore((s) => s.selectedHotspotId);
@@ -21,6 +23,7 @@ export const RightPanel: React.FC = () => {
   const setIntervention = useStore((s) => s.setIntervention);
   const recommendResult = useStore((s) => s.recommendResult) || MOCK_RECOMMEND_RESULT;
   const setRecommendResult = useStore((s) => s.setRecommendResult);
+  const closureDeltas = useStore((s) => s.closureDeltas);
 
   // Active hotspot
   const hotspot =
@@ -92,11 +95,23 @@ export const RightPanel: React.FC = () => {
     <aside className="w-full h-full bg-[#FDFDFD] flex flex-col overflow-y-auto panel-scroll border-l border-border">
       {/* Hotspot Header */}
       <div className="p-4 border-b border-border bg-white shrink-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`w-2.5 h-2.5 rounded-full ${statusColorClass} shrink-0`} />
-          <h2 className="text-[15px] font-semibold text-text-primary tracking-tight">
-            {hotspot.name}
-          </h2>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${statusColorClass} shrink-0`} />
+            <h2 className="text-[15px] font-semibold text-text-primary tracking-tight">
+              {hotspot.name}
+            </h2>
+          </div>
+          <button
+            onClick={() => setActiveTab('explain')}
+            className="h-6 px-2 bg-blue-50 hover:bg-blue-100 text-primary border border-blue-200 text-[11px] font-medium rounded-sm flex items-center gap-1 transition-colors"
+            title="Ask NIRNAY"
+          >
+            <span>Ask</span>
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
         </div>
 
         <div className="flex items-center gap-2 text-[11px] text-text-secondary mt-1">
@@ -123,6 +138,7 @@ export const RightPanel: React.FC = () => {
           storageDepth={hotspot.storage_depth_max_m}
           simResult={simResult}
           culvertLabel={`Culvert #${hotspot.id.slice(-2).toUpperCase() || '08'} Dtp`}
+          closureDelta={closureDeltas[hotspot.id]}
         />
 
         {/* Tab Selector */}
@@ -281,49 +297,9 @@ export const RightPanel: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 3: EXPLAIN */}
+        {/* TAB 3: EXPLAIN (Ask NIRNAY Q&A Panel) */}
         {activeTab === 'explain' && (
-          <div className="border border-border bg-white rounded-sm p-4 space-y-3 mb-4 text-[12px]">
-            <div className="font-semibold text-text-primary">
-              Hydrological Balance Model
-            </div>
-            <p className="text-text-secondary leading-relaxed">
-              Inflow is modeled using the Rational Method:
-            </p>
-            <div className="bg-[#F8F9FA] p-2.5 font-mono text-[11px] rounded-sm text-text-primary border border-border/80">
-              Q_in = 0.278 · C · I(t) · A_basin
-            </div>
-            <ul className="list-disc pl-4 text-text-secondary space-y-1 text-[11px]">
-              <li>
-                Runoff Coefficient (C):{' '}
-                <span className="font-mono">{hotspot.runoff_coeff_default}</span>
-              </li>
-              <li>
-                Sag Catchment Area:{' '}
-                <span className="font-mono">{hotspot.catchment_km2} km²</span>
-              </li>
-              <li>
-                Permanent Pump Capacity:{' '}
-                <span className="font-mono">
-                  {hotspot.permanent_pump_capacity_m3s} m³/s
-                </span>
-              </li>
-              <li>
-                Gravity Drain Capacity:{' '}
-                <span className="font-mono">
-                  {hotspot.gravity_drain_capacity_m3s} m³/s
-                </span>
-              </li>
-            </ul>
-
-            <div className="pt-2 border-t border-border/70 font-semibold text-text-primary">
-              Threshold Rules
-            </div>
-            <p className="text-text-secondary text-[11px] leading-relaxed">
-              • <strong className="text-status-amber">Alert (15 cm)</strong>: Water covers roadway crown; low-clearance vehicles begin stalling.
-              <br />• <strong className="text-status-red">Closure (20 cm)</strong>: Full carriageway closure mandatory under Delhi Traffic Police SOP.
-            </p>
-          </div>
+          <AskNirnayPanel hotspot={hotspot} />
         )}
       </div>
     </aside>

@@ -7,6 +7,7 @@ interface CrossSectionCardProps {
   storageDepth: number;
   simResult: SimulationResult;
   culvertLabel?: string;
+  closureDelta?: string | null;
 }
 
 export const CrossSectionCard: React.FC<CrossSectionCardProps> = ({
@@ -14,6 +15,7 @@ export const CrossSectionCard: React.FC<CrossSectionCardProps> = ({
   storageDepth,
   simResult,
   culvertLabel = 'Culvert #08 Dtp',
+  closureDelta,
 }) => {
   // Clamping to physical maximum storage depth
   const clampedDepth = Math.min(Math.max(0, depth), storageDepth);
@@ -258,11 +260,16 @@ export const CrossSectionCard: React.FC<CrossSectionCardProps> = ({
             TIME TO CLOSURE
           </div>
           <div
-            className={`font-mono text-[14px] font-semibold ${
+            className={`font-mono text-[14px] font-semibold flex items-center justify-center gap-1.5 ${
               isClosed ? 'text-status-red' : 'text-text-primary'
             }`}
           >
-            {formatTime(simResult.minutesToClosure)}
+            <span>{formatTime(simResult.minutesToClosure)}</span>
+            {closureDelta && (
+              <span className="text-[11px] font-mono text-primary font-medium transition-opacity duration-300">
+                ({closureDelta})
+              </span>
+            )}
           </div>
         </div>
 

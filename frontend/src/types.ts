@@ -63,6 +63,22 @@ export interface RecommendResult {
   rationale?: string;
 }
 
+/** Tool invocation metadata returned by the chat API */
+export interface ChatToolInvocation {
+  tool: string;
+  args: Record<string, any>;
+}
+
+/** Chat message in Ask NIRNAY session */
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'assistant';
+  text: string;
+  toolsInvoked?: ChatToolInvocation[];
+  isCached?: boolean;
+  timestamp: number;
+}
+
 /** Hotspot data file shape */
 export interface HotspotData {
   hotspots: Hotspot[];

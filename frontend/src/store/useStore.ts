@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { Interventions, SimulationResult, RecommendResult, Hotspot } from '@/types';
+import type { Interventions, SimulationResult, RecommendResult, Hotspot, ChatMessage } from '@/types';
 import { simulate } from '@/engine/simulator';
+import { askNirnay } from '@/api/chat';
 import { DEFAULT_RAIN_MM, DEFAULT_DURATION_H, DEFAULT_AVAILABLE_PUMPS, DEFAULT_AVAILABLE_CREWS, ALERT_THRESHOLD_M, CLOSURE_THRESHOLD_M } from '@/config';
 import type { PinStatus } from '@/types';
 import hotspotData from '@/data/hotspots.json';
@@ -34,10 +35,23 @@ export interface StoreState {
   /* Compare mode */
   compareMode: boolean;
 
+  /* Active right panel tab */
+  activeTab: 'interventions' | 'recommend' | 'explain';
+
+  /* Grounded session chat state (Ask NIRNAY) */
+  chatMessages: ChatMessage[];
+  isChatLoading: boolean;
+  chatSessionId: string;
+
   /* Derived simulation cache */
   simResults: Record<string, SimulationResult>;
 
+  /* Real-time inline feedback deltas keyed by hotspot id */
+  closureDeltas: Record<string, string | null>;
+
   /* Actions */
+  setActiveTab: (tab: 'interventions' | 'recommend' | 'explain') => void;
+  sendChatMessage: (text: string, hotspotName?: string) => Promise<void>;
   setRainMm: (mm: number) => void;
   setDurationH: (h: number) => void;
   selectHotspot: (id: string | null) => void;
@@ -87,7 +101,63 @@ export const useStore = create<StoreState>((set, get) => {
     availableCrews: DEFAULT_AVAILABLE_CREWS,
     recommendResult: null,
     compareMode: false,
+    activeTab: 'recommend',
+    chatMessages: [
+      {
+        id: 'msg-welcome',
+        sender: 'assistant',
+        text: 'Ask NIRNAY explains hydrological balance curves, stage breach timings, and dispatch tradeoffs computed by the simulator.',
+        toolsInvoked: [],
+        timestamp: Date.now(),
+      },
+    ],
+    isChatLoading: false,
+    chatSessionId: `session-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
     simResults: initResults,
+    closureDeltas: {},
+
+    setActiveTab: (tab) => set({ activeTab: tab }),
+
+    sendChatMessage: async (text: string, hotspotName?: string) => {
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        sender: 'user',
+        text,
+        timestamp: Date.now(),
+      };
+
+      set((state) => ({
+        chatMessages: [...state.chatMessages, userMsg],
+        isChatLoading: true,
+      }));
+
+      const { chatSessionId, rainMm, durationH, recommendResult } = get();
+
+      const response = await askNirnay({
+        sessionId: chatSessionId,
+        message: text,
+        currentScenario: {
+          rain_mm: rainMm,
+          duration_h: durationH,
+          allocation: recommendResult?.allocations || [],
+        },
+        hotspotName,
+      });
+
+      const assistantMsg: ChatMessage = {
+        id: `asst-${Date.now()}`,
+        sender: 'assistant',
+        text: response.reply,
+        toolsInvoked: response.tools_invoked,
+        isCached: response.isCached,
+        timestamp: Date.now(),
+      };
+
+      set((state) => ({
+        chatMessages: [...state.chatMessages, assistantMsg],
+        isChatLoading: false,
+      }));
+    },
 
     setRainMm: (mm) => {
       set({ rainMm: mm });
@@ -99,11 +169,54 @@ export const useStore = create<StoreState>((set, get) => {
     },
     selectHotspot: (id) => set({ selectedHotspotId: id }),
     setIntervention: (hotspotId, patch) => {
-      const prev = get().interventions[hotspotId] || defaultInterventions();
+      const prevInts = get().interventions[hotspotId] || defaultInterventions();
+      const nextInts = { ...prevInts, ...patch };
+
+      // Calculate before and after time-to-closure
+      const targetHotspot = hotspots.find((h) => h.id === hotspotId);
+      if (targetHotspot) {
+        const { rainMm, durationH } = get();
+        const prevSim = get().simResults[hotspotId] || simulate(targetHotspot, rainMm, durationH, prevInts);
+        const nextSim = simulate(targetHotspot, rainMm, durationH, nextInts);
+
+        const prevClose = prevSim.minutesToClosure;
+        const nextClose = nextSim.minutesToClosure;
+
+        if (prevClose !== nextClose) {
+          const formatClose = (mins: number) => {
+            if (!isFinite(mins) || mins === Infinity) return '--';
+            return `${mins} min`;
+          };
+          const deltaStr = `${formatClose(prevClose)} -> ${formatClose(nextClose)}`;
+
+          set((state) => ({
+            closureDeltas: {
+              ...state.closureDeltas,
+              [hotspotId]: deltaStr,
+            },
+          }));
+
+          // Clear delta after 3 seconds (fades out)
+          setTimeout(() => {
+            set((state) => {
+              if (state.closureDeltas[hotspotId] === deltaStr) {
+                return {
+                  closureDeltas: {
+                    ...state.closureDeltas,
+                    [hotspotId]: null,
+                  },
+                };
+              }
+              return state;
+            });
+          }, 3000);
+        }
+      }
+
       set({
         interventions: {
           ...get().interventions,
-          [hotspotId]: { ...prev, ...patch },
+          [hotspotId]: nextInts,
         },
       });
       get().runAllSimulations();

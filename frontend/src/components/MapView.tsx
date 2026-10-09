@@ -15,6 +15,7 @@ export const MapView: React.FC = () => {
   const selectedHotspotId = useStore((s) => s.selectedHotspotId);
   const selectHotspot = useStore((s) => s.selectHotspot);
   const simResults = useStore((s) => s.simResults);
+  const closureDeltas = useStore((s) => s.closureDeltas);
 
   // Initialize MapLibre
   useEffect(() => {
@@ -128,6 +129,7 @@ export const MapView: React.FC = () => {
       const status = getPinStatus(sim);
       const isClosed = status === 'red';
       const isSelected = hotspot.id === selectedHotspotId;
+      const activeDelta = closureDeltas[hotspot.id];
 
       // Color mapping
       const markerColor =
@@ -151,8 +153,8 @@ export const MapView: React.FC = () => {
       }
       el.appendChild(dot);
 
-      // Label only the selected hotspot and closed hotspots
-      if (isSelected || isClosed) {
+      // Label the selected hotspot, closed hotspots, or any hotspot with an active delta
+      if (isSelected || isClosed || activeDelta) {
         const label = document.createElement('div');
         label.className =
           'absolute left-4 top-1/2 -translate-y-1/2 whitespace-nowrap bg-white/95 px-2 py-0.5 rounded text-[11px] font-medium border border-border shadow-sm flex items-center gap-1.5 pointer-events-none z-10';
@@ -167,6 +169,13 @@ export const MapView: React.FC = () => {
           closedBadge.textContent = 'Closed';
           closedBadge.className = 'text-status-red font-semibold text-[10px]';
           label.appendChild(closedBadge);
+        }
+
+        if (activeDelta) {
+          const deltaBadge = document.createElement('span');
+          deltaBadge.textContent = `(${activeDelta})`;
+          deltaBadge.className = 'text-primary font-mono text-[10px] font-semibold';
+          label.appendChild(deltaBadge);
         }
 
         el.appendChild(label);
@@ -188,7 +197,7 @@ export const MapView: React.FC = () => {
 
       markersRef.current.push(marker);
     });
-  }, [simResults, selectedHotspotId, selectHotspot]);
+  }, [simResults, selectedHotspotId, selectHotspot, closureDeltas]);
 
   return (
     <div className="relative w-full h-full">

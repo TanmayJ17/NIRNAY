@@ -1,5 +1,6 @@
 import React from 'react';
 import type { RecommendResult as RecommendResultType } from '@/types';
+import { useStore } from '@/store/useStore';
 
 interface RecommendResultProps {
   result: RecommendResultType;
@@ -10,13 +11,26 @@ export const RecommendResult: React.FC<RecommendResultProps> = ({ result }) => {
     <div className="border border-border bg-white rounded-sm p-3.5 mb-4">
       {/* Primary KPI: Closure hours saved */}
       <div className="mb-3">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[12px] text-text-secondary font-medium">
-            Closure-hours saved:
-          </span>
-          <span className="font-mono text-[20px] font-bold text-primary">
-            {result.closureHoursSaved.toFixed(1)}
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[12px] text-text-secondary font-medium">
+              Closure-hours saved:
+            </span>
+            <span className="font-mono text-[20px] font-bold text-primary">
+              {result.closureHoursSaved.toFixed(1)}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              const { setActiveTab, sendChatMessage } = useStore.getState();
+              setActiveTab('explain');
+              sendChatMessage('Why this allocation?');
+            }}
+            className="text-[12px] font-medium text-primary hover:underline flex items-center gap-1"
+          >
+            <span>Ask why</span>
+            <span aria-hidden="true">&rarr;</span>
+          </button>
         </div>
 
         {/* P10-P90 Range display when provided */}
