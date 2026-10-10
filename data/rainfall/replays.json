@@ -1,0 +1,22 @@
+[
+  {
+    "id": "july-2026-replay",
+    "name": "July 2026 Heavy Monsoon Replay",
+    "description": "104 mm rainfall over 24 hours. Post-upgrade pump deployment kept Minto Bridge & Dhaula Kuan open.",
+    "rainfall_mm": 104.0,
+    "duration_hours": 24.0,
+    "imd_category": "Very Heavy Rainfall",
+    "historical_date": "2026-07-15",
+    "actual_outcome": "All major hotspots remained functional due to pre-positioned 754 permanent & 305 temporary pumps."
+  },
+  {
+    "id": "may-2025-replay",
+    "name": "May 2025 Cloudburst Event Replay",
+    "description": "85 mm severe cloudburst over 3 hours overnight. Legacy pump capacity caused Minto Bridge & Zakhira underpasses to flood.",
+    "rainfall_mm": 85.0,
+    "duration_hours": 3.0,
+    "imd_category": "Extremely Heavy Rainfall",
+    "historical_date": "2025-05-28",
+    "actual_outcome": "Minto Bridge closed for 4.5 hours; Zakhira closed for 3.2 hours due to drain clogging and delayed pump dispatch."
+  }
+]

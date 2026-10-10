@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  NIRNAY — Urban Waterlogging Decision & Resource Allocation Engine
+  Serverless Architecture with AWS Lambda, Amazon API Gateway, Amazon DynamoDB, Amazon S3, and Amazon Bedrock.
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        BEDROCK_MODEL_ID: anthropic.claude-3-5-sonnet-20240620-v1:0
+        DYNAMODB_TABLE_NAME: !Ref ScenariosTable
+        S3_BUCKET_NAME: !Ref ReportsBucket
+
+Resources:
+  NirnayApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: lambda_handler.handler
+      Runtime: python3.11
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ScenariosTable
+        - S3CrudPolicy:
+            BucketName: !Ref ReportsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: "*"
+      Events:
+        RootApi:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+  ScenariosTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: NIRNAY-Scenarios
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: scenario_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: scenario_id
+          KeyType: HASH
+
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "nirnay-hydrology-reports-${AWS::AccountId}"
+
+Outputs:
+  NirnayApiEndpoint:
+    Description: "API Gateway endpoint URL for NIRNAY Decision Engine"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
